@@ -2,7 +2,7 @@
 
 ### Sprint 1
 
-- [ ] Serveur web de base avec API
+- [x] Serveur web de base avec API
 - [ ] Création d'un profil, stockage du state associé
 - [ ] Création du système monétaire de base
 - [ ] Création du système d'achat/vente de vaisseaux

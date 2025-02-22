@@ -1,4 +1,43 @@
 { pkgs, deps }: {
+  unit_tests = let
+    app = pkgs.writeShellApplication {
+      name = "unit-tests";
+      runtimeInputs = deps;
+      text = ''
+        export CARGO_HOME=$PWD/.cargohome
+        cargo test
+      '';
+    };
+  in "${app}/bin/unit-tests";
+
+  functional_tests = let
+    python = pkgs.python312.withPackages (p: [ p.requests ]);
+    app = pkgs.writeShellApplication {
+      name = "functionnal-tests";
+      runtimeInputs = deps ++ [ python ];
+      text = ''
+        export CARGO_HOME=$PWD/.cargohome
+        cargo build
+        ./target/debug/simeis &
+        sleep 1
+
+        if [ -z "$(jobs -r)" ]; then
+          echo "!!! Failed to start the server";
+          exit 1;
+        fi
+
+        if ! python3 .forgejo/functests.py 127.0.0.1 8080; then
+          echo "Some tests failed"
+          kill "$(jobs -p)"
+          exit 1;
+        fi
+
+        kill "$(jobs -p)"
+        echo "[*] Finished"
+      '';
+    };
+  in "${app}/bin/functionnal-tests";
+
   check_rust_code = let
     app = pkgs.writeShellApplication {
       name = "rust-check-code";
@@ -45,18 +84,18 @@
         FILES_TO_CHECK=$( rg -l "TODO" | rg -v "${ignored}" | tr '\n' ' ')
         git diff "origin/$GITHUB_BASE_REF" -- "$FILES_TO_CHECK" \
           | rg -v "^-" \
-          | rg "TODO" > todos_to_check
+          | tee todos_to_check
 
         rg -o "\(#\d+\)" todos_to_check \
           | rg -o "\d+" \
           | sort -u -n \
-          > issues_to_check
+          | tee issues_to_check
 
         while read -r ISSUE; do
           if ! curl "$CURL_OPTS" \
             "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/issues/$ISSUE" \
             | jq ".state" \
-            | grep "\"open\"" \
+            | rg "\"open\"" \
             2>/dev/null 1>/dev/null
           then
             echo "[!] Issue $ISSUE is closed or missing"
@@ -65,7 +104,7 @@
         done < issues_to_check
         echo ""
 
-        if rg "TODO" "$FILES_TO_CHECK" | rg -v "\(#\d+\)"; then
+        if echo "$FILES_TO_CHECK" | xargs -n 1 rg "TODO" | rg -v "\(#\d+\)"; then
           echo "[!] Some TODOs are not linked to an existing issue"
           ERRCODE=1
         fi

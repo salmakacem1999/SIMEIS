@@ -16,10 +16,14 @@
     };
 
     deps = with pkgs; [
+      gcc
       rustpkg
       cargo-audit
       cargo-vet
       mold
+      (python312.withPackages (p: with p; [
+        requests
+      ]))
     ];
 
     mkScript = script: { type = "app"; program = builtins.toString script; };

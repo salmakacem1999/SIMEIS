@@ -5,6 +5,33 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
+  tests:
+    runs-on: nix
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Calculate lockfile hash
+        id: cargo-lock-hash
+        run: echo "hash=$(md5sum Cargo.lock)" >> $GITHUB_OUTPUT
+
+      - uses: https://code.forgejo.org/actions/cache@v4
+        name: Cache dependencies
+        id: cache-rust
+        with:
+          path: |
+            .cargohome/registry/index/
+            .cargohome/registry/cache/
+            .cargohome/git/db/
+            target/
+            supply-chain/
+          key: ${{ runner.os }}-${{ steps.cargo-lock-hash.outputs.hash }}
+
+      - name: "Unit tests"
+        run: nix run .#unit_tests
+
+      - name: "Functional tests"
+        run: nix run .#functional_tests
+
   code-check:
     runs-on: nix
     steps:
@@ -19,9 +46,9 @@ jobs:
         id: cache-rust
         with:
           path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
+            .cargohome/registry/index/
+            .cargohome/registry/cache/
+            .cargohome/git/db/
             target/
             supply-chain/
           key: ${{ runner.os }}-${{ steps.cargo-lock-hash.outputs.hash }}
@@ -33,6 +60,5 @@ jobs:
     runs-on: nix
     steps:
       - uses: actions/checkout@v4
-
       - name: "Check for unadressed TODOs"
         run: nix run .#check_todos
