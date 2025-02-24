@@ -36,7 +36,7 @@ impl Game {
 
     pub fn start(&self, stop: Receiver<bool>) {
         log::debug!("Started thread");
-        let sleepmin_iter = std::time::Duration::from_millis(300);
+        let sleepmin_iter = ITER_PERIOD;
         let mut last_iter = std::time::Instant::now();
         while stop.try_recv().is_err_and(|x| x == TryRecvError::Empty) {
             self.threadloop();
@@ -50,10 +50,19 @@ impl Game {
     fn threadloop(&self) {
         for (_, player) in self.players.read().unwrap().iter() {
             let mut player = player.write().unwrap();
-            player.money -= player.costs * ITER_PERIOD.as_secs_f64();
-            log::debug!("Player {} money {:.2}", player.name, player.money);
-            if player.money < 0.0 {
-                player.lose();
+            player.update_money(ITER_PERIOD.as_secs_f64());
+            let mut deadship = vec![];
+            for (id, ship) in player.ships.iter_mut() {
+                let finished = ship.update_flight(ITER_PERIOD.as_secs_f64());
+                if finished {
+                    ship.state = crate::ship::ShipState::Idle;
+                    if ship.hull_decay >= ship.hull_decay_capacity {
+                        deadship.push(*id);
+                    }
+                }
+            }
+            for id in deadship {
+                player.ships.remove(&id);
             }
         }
     }

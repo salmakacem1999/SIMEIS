@@ -45,7 +45,6 @@ class Tester:
             value=exc,
             tb=exc.__traceback__,
         )
-        print(exc)
         for line in tb_str:
             if (" assert " in line) or ("in test_" in line):
                 errdata += line.strip() + "\n"
@@ -69,14 +68,24 @@ class Tester:
             self.addtrace("Query args", kwargs)
             url += "?" + qry
 
-        if method == "GET":
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-            got = requests.get(url, headers=headers)
-        elif method == "POST":
-            headers["Content-Type"] = "application/json"
-            got = requests.post(url, data=json.dumps(body), headers=headers)
-        else:
-            raise Exception("Test uses an unknown method", method)
+        try:
+            if method == "GET":
+                headers["Content-Type"] = "application/x-www-form-urlencoded"
+                got = requests.get(url, headers=headers)
+            elif method == "POST":
+                headers["Content-Type"] = "application/json"
+                got = requests.post(url, data=json.dumps(body), headers=headers)
+            else:
+                raise Exception("Test uses an unknown method", method)
+        except requests.exceptions.ConnectionError:
+            print("")
+            print("Server panicked")
+            print("===== TRACE =====")
+            print("\n".join(self.trace))
+            print("=================")
+            print("Server panicked")
+            print("")
+            sys.exit(1)
 
         self.addtrace("Got result from server", got.status_code, got.text)
         assert got.status_code == expcode
@@ -89,9 +98,10 @@ class Tester:
             assert "error" in data.keys()
             return data
 
-    def create_test_player(self):
-        name = "TestPlayer_" + self.current_test.replace(" ", "_").lower()
-        got = self.assert_ok("/newplayer", method="POST", body={"name": name})
+    def create_test_player(self, name=None):
+        if name is None:
+            name = "TestPlayer_" + self.current_test.replace(" ", "_").lower()
+        got = self.assert_ok("/player/new", method="POST", body={"name": name})
         self.key = self.assert_got(got, "key", None)
         self.id = self.assert_got(got, "playerId", None)
 
@@ -105,7 +115,13 @@ class Tester:
                 self.assert_ok("/shipyard/buy/" + str(ship["id"]))
         after = self.assert_ok(f"/player/{self.id}")
         assert len(after["ships"]) > 0
-        return after["ships"][retind]
+        ship = after["ships"][retind]
+        return self.assert_got(ship, "id", None)
+
+    def setup_crew(self, shipid):
+        pilot = self.assert_ok(f"/crew/hire/pilot")
+        pilotid = self.assert_got(pilot, "id", None)
+        self.assert_ok(f"/crew/assign/{pilotid}/{shipid}")
 
     def assert_ok(self, endpoint, **kwargs):
         got = self.request(endpoint, **kwargs)
@@ -149,30 +165,34 @@ class Tester:
         self.assert_error("/player/53", errtype="NoPlayerKey")
         self.assert_error("/player/53", errtype="PlayerNotFound(53)", key=12341234)
 
-        self.request("/newplayer", method="POST", body={}, expcode=400)
-        got = self.assert_ok("/newplayer", method="POST", body={"name": "Testuser"})
+        self.request("/player/new", method="POST", body={}, expcode=400)
+        got = self.assert_ok("/player/new", method="POST", body={"name": "Testuser"})
         self.key = self.assert_got(got, "key", None)
         self.id = self.assert_got(got, "playerId", 11070862243173938738)
 
-        pl2 = self.assert_ok("/newplayer", method="POST", body={"name": "Testuser2"})
-        self.assert_error("/newplayer",
+        pl2 = self.assert_ok("/player/new", method="POST", body={"name": "Testuser2"})
+        pl2id = self.assert_got(pl2, "playerId", None)
+        self.assert_error("/player/new",
             method="POST", body={"name": "Testuser2"},
             errtype="PlayerAlreadyExists(\"Testuser2\")"
         )
         pl2_key = self.assert_got(pl2, "key", None)
 
-        got = self.assert_ok(f"/player/{self.id}")
-        self.assert_got(got, "money", 30000)
+        pl1 = self.assert_ok(f"/player/{self.id}")
+        self.assert_got(pl1, "money", 30000)
 
         got = self.assert_ok(f"/player/{self.id}", key=pl2["key"])
         self.assert_got(got, "money", None, negate=True)
+
+        pl2 = self.assert_ok(f"/player/{pl2id}", key=pl2["key"])
+        self.assert_got(pl2, "money", self.assert_got(pl1, "money", None))
 
     @functest
     def test_shipyard(self):
         self.create_test_player()
 
         got = self.assert_ok(f"/player/{self.id}")
-        beforemoney = self.assert_got(got, "money", 30000)
+        beforemoney = self.assert_got(got, "money", None)
 
         got = self.assert_ok("/shipyard/list")
         shiplist = self.assert_got(got, "ships", None)
@@ -235,7 +255,7 @@ class Tester:
     @functest
     def test_assign_crew(self):
         self.create_test_player()
-        ship = self.buy_a_ship()
+        shipid = self.buy_a_ship()
 
         pilot = self.assert_ok(f"/crew/hire/pilot")
         pilot2 = self.assert_ok(f"/crew/hire/pilot")
@@ -244,16 +264,16 @@ class Tester:
         idle = self.assert_ok("/crew/idle")
         assert len(self.assert_got(idle, "idle", None)) == 3
 
-        shipstatus = self.assert_ok("/ship/" + str(ship["id"]))
+        shipstatus = self.assert_ok(f"/ship/{shipid}")
         stats = self.assert_got(shipstatus, "stats", None)
         speed = self.assert_got(stats, "speed", None)
         assert speed == 0
 
-        self.assert_ok("/crew/assign/" + str(pilot["id"]) + "/" + str(ship["id"]))
+        self.assert_ok("/crew/assign/" + str(pilot["id"]) + f"/{shipid}")
         idle = self.assert_ok("/crew/idle")
         assert len(self.assert_got(idle, "idle", None)) == 2
 
-        shipstatus = self.assert_ok("/ship/" + str(ship["id"]))
+        shipstatus = self.assert_ok(f"/ship/{shipid}")
         self.assert_got(shipstatus, "crew", { str(pilot["id"]): { "member_type": "Pilot", "rank": 1 }})
         self.assert_got(shipstatus, "pilot", pilot["id"])
         stats = self.assert_got(shipstatus, "stats", None)
@@ -261,13 +281,102 @@ class Tester:
         assert speed_after > 0
 
         self.assert_error(
-            "/crew/assign/" + str(pilot2["id"]) + "/" + str(ship["id"]),
+            "/crew/assign/" + str(pilot2["id"]) + f"/{shipid}",
             errtype="ShipAlreadyHasPilot",
         )
         idle = self.assert_ok("/crew/idle")
         assert len(self.assert_got(idle, "idle", None)) == 2
-        shipstatus_after = self.assert_ok("/ship/" + str(ship["id"]))
+        shipstatus_after = self.assert_ok(f"/ship/{shipid}")
         assert shipstatus == shipstatus_after
+
+        operatorid = self.assert_got(operator, "id", None)
+        self.assert_error(f"/crew/assign/{operatorid}/{shipid}", errtype="CrewNotNeeded")
+
+    @functest
+    def test_travel(self):
+        self.create_test_player()
+        ship_id = self.buy_a_ship()
+        self.setup_crew(ship_id)
+
+        ship = self.assert_ok(f"/ship/{ship_id}")
+        shippos = ship["position"]
+
+        self.assert_error(f"/ship/{ship_id}/travelcost",
+            method="POST",
+            body=dict(destination=shippos),
+            errtype="NullDistance",
+        )
+
+        close = self.assert_ok(f"/ship/{ship_id}/travelcost",
+            method="POST",
+            body=dict(destination=(shippos[0]+1, shippos[1]+1, shippos[2]+1))
+        )
+        dist = self.assert_got(close, "distance", None)
+        assert dist is not None
+        assert dist > 0.0
+
+        far = self.assert_ok(f"/ship/{ship_id}/travelcost",
+            method="POST",
+            body=dict(destination=(shippos[0]+2, shippos[1]+2, shippos[2]+2))
+        )
+
+        self.assert_got(far, "distance", 2 * self.assert_got(close, "distance", None))
+        self.assert_got(far, "duration", 2 * self.assert_got(close, "duration", None))
+        self.assert_got(far, "fuel_consumption", 2 * self.assert_got(close, "fuel_consumption", None))
+        self.assert_got(far, "hull_usage", 2 * self.assert_got(close, "hull_usage", None))
+        self.assert_got(close, "direction", self.assert_got(far, "direction", None))
+
+        cost = self.assert_ok(f"/ship/{ship_id}/travelcost",
+            method="POST",
+            body=dict(destination=(shippos[0]+1, shippos[1]+1, shippos[2]+1))
+        )
+        nadd = int(0.5 / cost["duration"]) + 1
+        before = self.assert_ok(f"/ship/{ship_id}")
+        beforepos = self.assert_got(before, "position", None)
+        self.assert_got(before, "state", "Idle")
+        cost = self.assert_ok(f"/ship/{ship_id}/navigate",
+            method="POST",
+            body=dict(destination=(shippos[0]+nadd, shippos[1]+nadd, shippos[2]+nadd))
+        )
+        time.sleep(0.2)
+        during = self.assert_ok(f"/ship/{ship_id}")
+        assert self.assert_got(during, "state", None) != "Idle"
+        pos = self.assert_got(during, "position", None)
+        assert (pos[0] > shippos[0]) and (pos[1] > shippos[1]) and (pos[2] > shippos[2])
+        assert (pos[0] < shippos[0]+nadd) and (pos[1] < shippos[1]+nadd) and (pos[2] < shippos[2]+nadd)
+        time.sleep(cost["duration"])
+
+        after = self.assert_ok(f"/ship/{ship_id}")
+        self.assert_got(after, "state", "Idle")
+        afterpos = self.assert_got(after, "position", None)
+        assert self.assert_got(after, "fuel_tank", None) < self.assert_got(before, "fuel_tank", None)
+        assert self.assert_got(after, "hull_decay", None) > self.assert_got(before, "hull_decay", None)
+
+        self.addtrace(
+            "nadd = ", nadd,
+            "diff coord = ",
+            afterpos[0] - beforepos[0],
+            afterpos[1] - beforepos[1],
+            afterpos[2] - beforepos[2],
+        )
+        assert (afterpos[0] - beforepos[0]) == nadd
+        assert (afterpos[1] - beforepos[1]) == nadd
+        assert (afterpos[2] - beforepos[2]) == nadd
+
+        cost = self.assert_ok(f"/ship/{ship_id}/navigate",
+            method="POST",
+            body=dict(destination=(shippos[0], shippos[1], shippos[2]))
+        )
+        time.sleep(cost["duration"])
+
+        back = self.assert_ok(f"/ship/{ship_id}")
+        self.addtrace("start", afterpos, "now", back["position"])
+        self.addtrace("want", shippos, "got", back["position"])
+        pos = self.assert_got(back, "position", shippos)
+        assert self.assert_got(back, "fuel_tank", None) < self.assert_got(after, "fuel_tank", None)
+        assert self.assert_got(back, "hull_decay", None) > self.assert_got(after, "hull_decay", None)
+        assert self.assert_got(back, "fuel_tank", None) < self.assert_got(before, "fuel_tank", None)
+        assert self.assert_got(back, "hull_decay", None) > self.assert_got(before, "hull_decay", None)
 
 if __name__ == "__main__":
     t = Tester(sys.argv[1], sys.argv[2])

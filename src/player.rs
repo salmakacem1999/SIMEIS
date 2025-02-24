@@ -41,12 +41,19 @@ impl Player {
         let mut randbytes = [0; 128];
         rng.fill_bytes(&mut randbytes);
 
+        #[allow(unused_mut)]
+        let mut money = INIT_MONEY;
+
+        #[cfg(feature = "testing")]
+        if req.name.starts_with("test-rich") {
+            money *= 10000.0;
+        }
         Player {
             key: randbytes,
             id: hasher.finish(),
             lost: false,
 
-            money: INIT_MONEY,
+            money,
             costs: 0.0,
 
             name: req.name,
@@ -65,9 +72,12 @@ impl Player {
             .sum::<f64>();
     }
 
-    pub fn lose(&mut self) {
-        self.lost = true;
-        // TODO (#19)  What to do with its resources, ships, etc...
+    pub fn update_money(&mut self, tdelta: f64) {
+        self.money -= self.costs * tdelta;
+        if self.money < 0.0 {
+            self.lost = true;
+            // TODO (#19)  What to do with its resources, ships, etc...
+        }
     }
 }
 

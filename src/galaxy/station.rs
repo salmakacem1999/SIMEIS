@@ -14,9 +14,9 @@ pub struct Station {
 }
 
 impl Station {
-    pub fn init() -> Station {
+    pub fn init(position: super::SpaceCoord) -> Station {
         Station {
-            shipyard: Ship::init_shipyard(),
+            shipyard: Ship::init_shipyard(position),
             idle_crew: Crew::default(),
         }
     }
@@ -68,7 +68,9 @@ pub fn buy_ship(
     }
 
     let mut player = player.write().unwrap();
-    let ship = station.write().unwrap().shipyard.remove(index);
+    let mut ship = station.write().unwrap().shipyard.remove(index);
+    ship.update_perf_stats();
+    ship.fuel_tank = ship.fuel_tank_capacity;
     player.money -= price;
     player.ships.insert(id, ship);
 

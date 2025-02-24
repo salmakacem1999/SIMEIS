@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 
 use crate::errors::Errcode;
 use crate::player::{PlayerKey, ReqNewPlayer};
+use crate::ship::navigation::Travel;
 use crate::ship::ShipId;
 use crate::GameState;
 
@@ -72,7 +73,7 @@ async fn ping() -> impl web::Responder {
     build_response(Ok(json!({"ping": "pong"})))
 }
 
-#[web::post("/newplayer")]
+#[web::post("/player/new")]
 async fn new_player(srv: GameState, req: Json<ReqNewPlayer>) -> impl web::Responder {
     let req = req.0;
     build_response(crate::player::new_player(srv, req))
@@ -164,7 +165,40 @@ async fn get_ship_status(
     let Some(ship) = player.ships.get(id.as_ref()) else {
         return build_response(Err(Errcode::ShipNotFound(*id)));
     };
-    build_response(crate::ship::get_ship_status(ship))
+    build_response(Ok(serde_json::to_value(ship).unwrap()))
+}
+
+#[web::post("/ship/{ship_id}/travelcost")]
+async fn compute_travel_costs(
+    srv: GameState,
+    id: Path<ShipId>,
+    travel: Json<Travel>,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let player = get_player!(srv, req);
+    let player = player.read().unwrap();
+    let Some(ship) = player.ships.get(id.as_ref()) else {
+        return build_response(Err(Errcode::ShipNotFound(*id)));
+    };
+    build_response(travel.0.compute_costs(ship).map(|v| serde_json::json!(v)))
+}
+
+#[web::post("/ship/{ship_id}/navigate")]
+async fn ask_navigate(
+    srv: GameState,
+    id: Path<ShipId>,
+    travel: Json<Travel>,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let player = get_player!(srv, req);
+    let mut player = player.write().unwrap();
+    let Some(ship) = player.ships.get_mut(id.as_ref()) else {
+        return build_response(Err(Errcode::ShipNotFound(*id)));
+    };
+    build_response(
+        ship.set_travel(travel.0)
+            .map(|cost| serde_json::json!(cost)),
+    )
 }
 
 pub fn configure(srv: &mut ServiceConfig) {
@@ -175,6 +209,8 @@ pub fn configure(srv: &mut ServiceConfig) {
         .service(get_ship_status)
         .service(shipyard_buy)
         .service(list_shipyard_ships)
+        .service(ask_navigate)
+        .service(compute_travel_costs)
         .service(get_player)
         .service(new_player);
 }

@@ -10,6 +10,8 @@ pub enum Errcode {
     CrewMemberNotIdle(crate::crew::CrewId),
     ShipAlreadyHasPilot,
     CrewNotNeeded,
+    CannotPerformTravel,
+    NullDistance,
 }
 
 impl Errcode {
@@ -27,6 +29,10 @@ impl Errcode {
             Errcode::CrewMemberNotIdle(_) => todo!(),
             Errcode::ShipAlreadyHasPilot => "This ship already has a pilot".to_string(),
             Errcode::CrewNotNeeded => "This crew member is not needed aboard this ship".to_string(),
+            Errcode::CannotPerformTravel => {
+                "This travel cannot be done with the current state of the ship".to_string()
+            }
+            Errcode::NullDistance => "You already are on this coordinates".to_string(),
         }
     }
 }

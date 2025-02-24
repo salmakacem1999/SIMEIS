@@ -50,7 +50,7 @@ impl Galaxy {
     pub fn init_new_station(&self) -> SpaceCoord {
         let mut rng = rand::rng();
         let coord = (rng.random(), rng.random(), rng.random());
-        let station = Arc::new(RwLock::new(station::Station::init()));
+        let station = Arc::new(RwLock::new(station::Station::init(coord)));
         self.insert_space_object(coord, SpaceObject::BaseStation(station));
         coord
     }
