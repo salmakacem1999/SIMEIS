@@ -22,6 +22,7 @@ pub enum Errcode {
     NoTrader,
     BuyNothing,
     SellNothing,
+    NoFuelInCargo,
 }
 
 impl Errcode {
@@ -57,6 +58,7 @@ impl Errcode {
             Errcode::NoTrader => "This station doesn't have a trader assigned".to_string(),
             Errcode::BuyNothing => "Either you attempted to BUY 0 units, or you don't have enough space in cargo to hold the resources".to_string(),
             Errcode::SellNothing => "Either you attempted to SELL 0 units, or you don't have any unit of this resource in your cargo".to_string(),
+            Errcode::NoFuelInCargo => "You don't have any fuel in the station cargo".to_string(),
         }
     }
 }

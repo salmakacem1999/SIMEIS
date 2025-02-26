@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use strum::{EnumIter, IntoEnumIterator};
+use strum::{EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
 use super::resources::Resource;
 use crate::crew::{Crew, CrewId, CrewMemberType};
@@ -7,22 +7,25 @@ use crate::galaxy::planet::Planet;
 
 pub type ShipModuleId = u16;
 
-#[derive(EnumIter, Debug, Serialize, Deserialize)]
+#[derive(
+    EnumIter,
+    EnumString,
+    IntoStaticStr,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+)]
+#[strum(ascii_case_insensitive)]
 pub enum ShipModuleType {
     Miner,
     GasSucker,
-    CargoExtension,
 }
 
 impl ShipModuleType {
-    pub fn from_str(s: &str) -> Option<ShipModuleType> {
-        Some(match s {
-            "miner" => ShipModuleType::Miner,
-            "gassucker" => ShipModuleType::GasSucker,
-            "cargoext" => ShipModuleType::CargoExtension,
-            _ => return None,
-        })
-    }
     pub fn new_module(self) -> ShipModule {
         ShipModule {
             operator: None,
@@ -34,12 +37,11 @@ impl ShipModuleType {
         match self {
             ShipModuleType::Miner => 1000.0,
             ShipModuleType::GasSucker => 2000.0,
-            ShipModuleType::CargoExtension => 5000.0,
         }
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ShipModule {
     pub operator: Option<CrewId>,
     pub modtype: ShipModuleType,
@@ -56,7 +58,6 @@ impl ShipModule {
             ShipModuleType::Miner | ShipModuleType::GasSucker => {
                 ctype == &CrewMemberType::Operator && self.operator.is_none()
             }
-            ShipModuleType::CargoExtension => false,
         }
     }
 
@@ -67,22 +68,24 @@ impl ShipModule {
         };
 
         let cm = crew.0.get(opid).unwrap();
-        let all_resources = Resource::iter().filter(|r| planet.resource_present(r));
+        let all_resources = Resource::iter()
+            .map(|r| (r, planet.resource_density(&r)))
+            .filter(|(_, d)| *d > 0.0);
+
         match self.modtype {
             ShipModuleType::Miner => all_resources
-                .filter(|r| r.mineable(cm.rank))
-                .map(|r| (r, self.extraction_rate(&r, cm.rank)))
+                .filter(|(r, _)| r.mineable(cm.rank))
+                .map(|(r, density)| (r, self.extraction_rate(&r, cm.rank, density)))
                 .collect(),
             ShipModuleType::GasSucker => all_resources
-                .filter(|r| r.suckable(cm.rank))
-                .map(|r| (r, self.extraction_rate(&r, cm.rank)))
+                .filter(|(r, _)| r.suckable(cm.rank))
+                .map(|(r, density)| (r, self.extraction_rate(&r, cm.rank, density)))
                 .collect(),
-            _ => vec![],
         }
     }
 
-    pub fn extraction_rate(&self, resource: &Resource, oprank: u8) -> f64 {
+    pub fn extraction_rate(&self, resource: &Resource, oprank: u8, density: f64) -> f64 {
         let d = resource.extraction_difficulty();
-        1.0 / (d / (oprank as f64))
+        density / (d / (oprank as f64))
     }
 }

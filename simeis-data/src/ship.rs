@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
-use std::ops::Deref;
 
 use cargo::ShipCargo;
 use module::{ShipModule, ShipModuleId};
 use navigation::{FlightData, Travel, TravelCost};
 use rand::Rng;
-use resources::Resource;
-use serde::Serialize;
+use resources::{ExtractionInfo, Resource};
+use serde::{Deserialize, Serialize};
 use shipstats::ShipStats;
 
 use crate::crew::{Crew, CrewId, CrewMemberType};
@@ -23,41 +22,46 @@ pub mod shipstats;
 const PILOT_FUEL_SHARE: u8 = 5; // Rank 10 = 4/5 fuel consumption
 const HULL_USAGE_BASE: f64 = 0.15;
 
-const FUEL_TANK_CAP_PRICE: f64 = 5.0;
+const FUEL_TANK_CAP_PRICE: f64 = 3.0;
 const CARGO_CAP_PRICE: f64 = 10.0;
-const HULL_DECAY_CAP_PRICE: f64 = 20.0;
-const REACTOR_POWER_PRICE: f64 = 150.0;
+const HULL_DECAY_CAP_PRICE: f64 = 5.0;
+const REACTOR_POWER_PRICE: f64 = 300.0;
+
+const REACTOR_SPEED_PER_POWER: f64 = 50.0;
 
 pub type ShipId = u64;
 
-#[derive(Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub enum ShipState {
     #[default]
     Idle,
     InFlight(FlightData),
-    Extracting(BTreeMap<Resource, f64>),
+    Extracting(ExtractionInfo),
 }
 
-#[derive(Serialize, Default)]
+#[derive(Deserialize, Serialize, Debug, Default)]
 pub struct Ship {
     pub id: ShipId,
-    pub position: SpaceCoord,
-    pub state: ShipState,
-
-    pub modules: BTreeMap<ShipModuleId, ShipModule>,
-    pub crew: Crew,
-
     pub reactor_power: u16,
-
-    pub cargo: ShipCargo,
-
-    pub fuel_tank: f64,
     pub fuel_tank_capacity: f64,
-
-    pub hull_decay: f64,
     pub hull_decay_capacity: f64,
+    pub modules: BTreeMap<ShipModuleId, ShipModule>,
 
+    #[serde(default)]
+    pub position: SpaceCoord,
+    #[serde(default)]
+    pub crew: Crew,
+    #[serde(default)]
+    pub cargo: ShipCargo,
+    #[serde(default)]
+    pub fuel_tank: f64,
+    #[serde(default)]
+    pub hull_decay: f64,
+    #[serde(default)]
     pub pilot: Option<CrewId>,
+    #[serde(default)]
+    pub state: ShipState,
+    #[serde(default)]
     pub stats: shipstats::ShipStats,
 }
 
@@ -76,9 +80,9 @@ impl Ship {
             id,
             position,
             reactor_power: 1,
-            fuel_tank_capacity: 100.0,
+            fuel_tank_capacity: 1000.0,
             cargo: ShipCargo::with_capacity(500.0),
-            hull_decay_capacity: 1000.0,
+            hull_decay_capacity: 3000.0,
             ..Default::default()
         }
     }
@@ -88,9 +92,9 @@ impl Ship {
             id,
             position,
             reactor_power: 3,
-            fuel_tank_capacity: 200.0,
+            fuel_tank_capacity: 2000.0,
             cargo: ShipCargo::with_capacity(1000.0),
-            hull_decay_capacity: 2000.0,
+            hull_decay_capacity: 6000.0,
             ..Default::default()
         }
     }
@@ -100,9 +104,9 @@ impl Ship {
             id,
             position,
             reactor_power: 10,
-            fuel_tank_capacity: 400.0,
+            fuel_tank_capacity: 4000.0,
             cargo: ShipCargo::with_capacity(3000.0),
-            hull_decay_capacity: 5000.0,
+            hull_decay_capacity: 20000.0,
             ..Default::default()
         }
     }
@@ -148,7 +152,8 @@ impl Ship {
             debug_assert!(matches!(pilot.member_type, CrewMemberType::Pilot));
             let totshare = (PILOT_FUEL_SHARE * 10) as f64;
             self.stats.fuel_consumption *= (totshare - (pilot.rank as f64)) / totshare;
-            self.stats.speed = (self.reactor_power as f64) * (pilot.rank as f64);
+            self.stats.speed =
+                (self.reactor_power as f64) * REACTOR_SPEED_PER_POWER * (pilot.rank as f64);
         } else {
             self.stats.speed = 0.0;
         };
@@ -160,14 +165,25 @@ impl Ship {
         };
     }
 
-    pub fn set_travel(&mut self, travel: Travel) -> Result<TravelCost, Errcode> {
+    pub fn compute_travel_costs(&self, destination: SpaceCoord) -> Result<TravelCost, Errcode> {
         let ShipState::Idle = self.state else {
             return Err(Errcode::ShipNotIdle);
         };
+        let travel = Travel::new(destination);
+        let cost = travel.compute_costs(self)?;
+        Ok(cost)
+    }
+
+    pub fn set_travel(&mut self, destination: SpaceCoord) -> Result<TravelCost, Errcode> {
+        let ShipState::Idle = self.state else {
+            return Err(Errcode::ShipNotIdle);
+        };
+        let travel = Travel::new(destination);
         let cost = travel.compute_costs(self)?;
         if !cost.have_enough(self) {
             return Err(Errcode::CannotPerformTravel);
         }
+        log::debug!("Starting flight on ship {}", self.id);
         self.state = ShipState::InFlight(FlightData::new(self.position, &cost, &travel));
         Ok(cost)
     }
@@ -201,35 +217,20 @@ impl Ship {
         false
     }
 
-    pub fn start_extraction(
-        &mut self,
-        galaxy: &Galaxy,
-    ) -> Result<BTreeMap<Resource, f64>, Errcode> {
+    pub fn start_extraction(&mut self, galaxy: &Galaxy) -> Result<ExtractionInfo, Errcode> {
         let ShipState::Idle = self.state else {
             return Err(Errcode::ShipNotIdle);
         };
         let Some(planet) = galaxy.get_planet(&self.position) else {
             return Err(Errcode::CannotExtractWithoutPlanet);
         };
-        let planet = planet.read().unwrap();
         log::debug!(
             "Ship {} started extraction on planet {:?}",
             self.id,
             planet.position
         );
 
-        let mut extraction = BTreeMap::new();
-        for (_, smod) in self.modules.iter() {
-            log::debug!("Ship got module {:?}", smod.modtype);
-            for (res, rate) in smod.can_extract(&self.crew, planet.deref()) {
-                if let Some(rrate) = extraction.get_mut(&res) {
-                    *rrate += rate;
-                } else {
-                    extraction.insert(res, rate);
-                }
-            }
-        }
-
+        let extraction = ExtractionInfo::create(self, &planet);
         self.state = ShipState::Extracting(extraction.clone());
         log::debug!("Extraction of resources: {extraction:?}");
         Ok(extraction)
@@ -248,11 +249,7 @@ impl Ship {
         let ShipState::Extracting(ref rates) = self.state else {
             unreachable!();
         };
-
-        for (res, rate) in rates.iter() {
-            self.cargo.add_resource(res, *rate * tdelta);
-        }
-        self.cargo.is_full()
+        rates.update_cargo(&mut self.cargo, tdelta)
     }
 
     pub fn unload_cargo(

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::Errcode, galaxy::SpaceCoord};
+use crate::{
+    errors::Errcode,
+    galaxy::{get_delta, get_direction, get_distance, SpaceCoord},
+};
 
 use super::Ship;
 
@@ -8,19 +11,13 @@ use super::Ship;
 pub struct Travel {
     pub destination: SpaceCoord,
 }
-
 impl Travel {
-    pub fn delta(&self, start: &SpaceCoord) -> (f64, f64, f64) {
-        (
-            (self.destination.0 as f64) - (start.0 as f64),
-            (self.destination.1 as f64) - (start.1 as f64),
-            (self.destination.2 as f64) - (start.2 as f64),
-        )
+    pub fn new(destination: SpaceCoord) -> Travel {
+        Travel { destination }
     }
 
     pub fn compute_costs(&self, ship: &Ship) -> Result<TravelCost, Errcode> {
-        let diff = self.delta(&ship.position);
-        let distance = (diff.0.powf(2.0) + diff.1.powf(2.0) + diff.2.powf(2.0)).sqrt();
+        let distance = get_distance(&ship.position, &self.destination);
         if distance == 0.0 {
             return Err(Errcode::NullDistance);
         }
@@ -30,8 +27,8 @@ impl Travel {
             ship.position,
             self.destination
         );
+        let direction = get_direction(&ship.position, &self.destination);
         let time_secs = distance / ship.stats.speed;
-        let direction = (diff.0 / distance, diff.1 / distance, diff.2 / distance);
         let fuel_consumption = ship.stats.fuel_consumption * time_secs;
         let hull_usage = ship.stats.hull_usage_rate * distance;
 
@@ -45,7 +42,7 @@ impl Travel {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TravelCost {
     pub direction: (f64, f64, f64),
     pub distance: f64,
@@ -61,7 +58,7 @@ impl TravelCost {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct FlightData {
     pub start: SpaceCoord,
     pub destination: SpaceCoord,
@@ -78,7 +75,7 @@ impl FlightData {
             dist_done: 0.0,
             dist_tot: cost.distance,
             direction: cost.direction,
-            delta: travel.delta(&start),
+            delta: get_delta(&start, &travel.destination),
             destination: travel.destination,
             start,
         }

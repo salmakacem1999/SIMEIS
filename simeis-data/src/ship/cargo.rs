@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::resources::Resource;
 
-#[derive(Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ShipCargo {
     pub capacity: f64,
     pub usage: f64,

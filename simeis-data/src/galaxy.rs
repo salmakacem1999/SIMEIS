@@ -4,7 +4,7 @@ use station::StationId;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
-type SpaceUnit = u32;
+pub type SpaceUnit = u32;
 pub type SpaceCoord = (SpaceUnit, SpaceUnit, SpaceUnit);
 type GalaxySector = (
     (SpaceUnit, SpaceUnit),
@@ -22,11 +22,11 @@ pub mod station;
 #[allow(dead_code)]
 pub enum SpaceObject {
     BaseStation(Arc<RwLock<station::Station>>),
-    Planet(Arc<RwLock<planet::Planet>>),
+    Planet(Arc<planet::Planet>),
 }
 
 struct GalaxyMap {
-    objects: BTreeMap<SpaceUnit, BTreeMap<SpaceUnit, BTreeMap<SpaceUnit, SpaceObject>>>,
+    objects: BTreeMap<SpaceCoord, SpaceObject>,
     discovered: Vec<GalaxySector>,
 }
 
@@ -56,9 +56,9 @@ impl GalaxyMap {
             let x = rng.random_range(secx.0..secx.1);
             let y = rng.random_range(secy.0..secy.1);
             let z = rng.random_range(secz.0..secz.1);
-            let planet = Arc::new(RwLock::new(planet::Planet::random((x, y, z), &mut rng)));
+            let planet = planet::Planet::random((x, y, z), &mut rng);
             if self
-                .insert(&(x, y, z), SpaceObject::Planet(planet))
+                .insert(&(x, y, z), SpaceObject::Planet(Arc::new(planet)))
                 .is_err()
             {
                 continue;
@@ -78,57 +78,32 @@ impl GalaxyMap {
     }
 
     pub fn get<'a>(&'a self, coord: &SpaceCoord) -> Option<&'a SpaceObject> {
-        let (x, y, z) = coord;
-        self.objects.get(x)?.get(y)?.get(z)
+        self.objects.get(coord)
     }
 
     pub fn insert(&mut self, coord: &SpaceCoord, obj: SpaceObject) -> Result<(), ()> {
-        let (x, y, z) = coord;
-        if let Some(ref mut ydata) = self.objects.get_mut(x) {
-            if let Some(ref mut zdata) = ydata.get_mut(y) {
-                if zdata.get(z).is_some() {
-                    return Err(());
-                } else {
-                    zdata.insert(*z, obj);
-                }
-            } else {
-                let mut zdata = BTreeMap::new();
-                zdata.insert(*z, obj);
-                ydata.insert(*y, zdata);
-            }
-        } else {
-            let mut zdata = BTreeMap::new();
-            zdata.insert(*z, obj);
-            let mut ydata = BTreeMap::new();
-            ydata.insert(*y, zdata);
-            self.objects.insert(*x, ydata);
+        if self.objects.contains_key(coord) {
+            return Err(());
         }
+        self.objects.insert(*coord, obj);
         Ok(())
     }
 
     fn list_objects_in_sector(&self, sector: GalaxySector) -> Vec<&SpaceObject> {
         let mut objects = vec![];
-        let mut niter = 0;
-        for (x, ydata) in self.objects.iter() {
-            niter += 1;
+        for (coord, obj) in self.objects.iter() {
+            let (x, y, z) = coord;
             if (x < &sector.0 .0) || (x > &sector.0 .1) {
                 continue;
             }
-            for (y, zdata) in ydata.iter() {
-                niter += 1;
-                if (y < &sector.1 .0) || (y > &sector.1 .1) {
-                    continue;
-                }
-                for (z, obj) in zdata.iter() {
-                    niter += 1;
-                    if (z < &sector.2 .0) || (z > &sector.2 .1) {
-                        continue;
-                    }
-                    objects.push(obj);
-                }
+            if (y < &sector.1 .0) || (y > &sector.1 .1) {
+                continue;
             }
+            if (z < &sector.2 .0) || (z > &sector.2 .1) {
+                continue;
+            }
+            objects.push(obj);
         }
-        log::debug!("Took {niter} iterations to find {} objects", objects.len());
         objects
     }
 }
@@ -169,7 +144,7 @@ impl Galaxy {
         Some(station.clone())
     }
 
-    pub fn get_planet(&self, coord: &SpaceCoord) -> Option<Arc<RwLock<planet::Planet>>> {
+    pub fn get_planet(&self, coord: &SpaceCoord) -> Option<Arc<planet::Planet>> {
         let galaxy = self.0.read().unwrap();
         let obj = galaxy.get(coord)?;
         let SpaceObject::Planet(planet) = obj else {
@@ -187,6 +162,28 @@ impl Galaxy {
         }
         results
     }
+}
+
+#[inline]
+pub fn get_delta(a: &SpaceCoord, b: &SpaceCoord) -> (f64, f64, f64) {
+    (
+        (b.0 as f64) - (a.0 as f64),
+        (b.1 as f64) - (a.1 as f64),
+        (b.2 as f64) - (a.2 as f64),
+    )
+}
+
+#[inline]
+pub fn get_distance(a: &SpaceCoord, b: &SpaceCoord) -> f64 {
+    let delta = get_delta(a, b);
+    (delta.0.powf(2.0) + delta.1.powf(2.0) + delta.2.powf(2.0)).sqrt()
+}
+
+#[inline]
+pub fn get_direction(a: &SpaceCoord, b: &SpaceCoord) -> (f64, f64, f64) {
+    let delta = get_delta(a, b);
+    let distance = get_distance(a, b);
+    (delta.0 / distance, delta.1 / distance, delta.2 / distance)
 }
 
 // TODO (#33)   Unit tests on this one

@@ -1,6 +1,6 @@
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use strum::IntoEnumIterator;
 
@@ -24,11 +24,13 @@ pub fn fee_rate(rank: u8) -> f64 {
 #[inline]
 fn base_price(r: &Resource) -> f64 {
     match r {
-        Resource::Stone => 1.0,
-        Resource::Iron => 6.0,
+        Resource::Stone => 3.0,
+        Resource::Iron => 8.0,
 
-        Resource::Helium => 1.0,
-        Resource::Ozone => 6.0,
+        Resource::Helium => 3.0,
+        Resource::Ozone => 8.0,
+
+        Resource::Fuel => 4.0,
     }
 }
 
@@ -118,7 +120,7 @@ impl Market {
     }
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct MarketTx {
     pub added_cargo: Option<(Resource, f64)>,
     pub removed_cargo: Option<(Resource, f64)>,
