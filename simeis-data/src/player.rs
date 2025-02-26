@@ -6,6 +6,7 @@ use crate::errors::Errcode;
 use crate::galaxy::station::{Station, StationId};
 use crate::galaxy::SpaceCoord;
 use crate::ship::module::{ShipModuleId, ShipModuleType};
+use crate::ship::upgrade::ShipUpgrade;
 use crate::ship::{Ship, ShipId};
 
 const INIT_MONEY: f64 = 30000.0;
@@ -104,5 +105,25 @@ impl Player {
         log::warn!("id: {id:?}");
         ship.modules.insert(id, modtype.new_module());
         Ok(id)
+    }
+
+    pub fn buy_ship_upgrade(
+        &mut self,
+        station: &mut Station,
+        ship_id: &ShipId,
+        upgrade: &ShipUpgrade,
+    ) -> Result<f64, Errcode> {
+        let Some(ship) = self.ships.get_mut(ship_id) else {
+            return Err(Errcode::ShipNotFound(*ship_id));
+        };
+
+        let price = station.get_ship_upgrade_price(upgrade);
+        if price > self.money {
+            return Err(Errcode::NotEnoughMoney(self.money, price));
+        }
+
+        self.money -= price;
+        upgrade.install(ship);
+        Ok(price)
     }
 }

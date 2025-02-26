@@ -4,7 +4,24 @@ use crate::ship::resources::Resource;
 
 use super::SpaceCoord;
 
+// Informations that can be scanned from a planet
 #[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct PlanetInfo {
+    pub position: SpaceCoord,
+    temperature: u16,
+    solid: bool,
+}
+
+impl PlanetInfo {
+    pub fn scan(_rank: u8, planet: &Planet) -> PlanetInfo {
+        PlanetInfo {
+            position: planet.position,
+            temperature: planet.temperature,
+            solid: planet.solid,
+        }
+    }
+}
+
 pub struct Planet {
     pub position: SpaceCoord,
     temperature: u16,

@@ -20,20 +20,6 @@ pub fn fee_rate(rank: u8) -> f64 {
     BASE_FEE_RATE / (rank as f64)
 }
 
-// TODO (#24) Get from configuration
-#[inline]
-fn base_price(r: &Resource) -> f64 {
-    match r {
-        Resource::Stone => 3.0,
-        Resource::Iron => 8.0,
-
-        Resource::Helium => 3.0,
-        Resource::Ozone => 8.0,
-
-        Resource::Fuel => 4.0,
-    }
-}
-
 #[derive(Serialize)]
 pub struct Market {
     pub prices: BTreeMap<Resource, f64>,
@@ -43,13 +29,13 @@ impl Market {
     pub fn init() -> Market {
         let mut prices = BTreeMap::new();
         for r in Resource::iter() {
-            prices.insert(r, base_price(&r));
+            prices.insert(r, r.base_price());
         }
         Market { prices }
     }
 
     fn rand_distrib(&self, r: &Resource, now_price: f64) -> Normal<f64> {
-        let base_price = base_price(r);
+        let base_price = r.base_price();
         let pratio = now_price / base_price;
         let avg = (1.0 - pratio) * MAX_AVG_AMPL;
         let std = avg.abs() + MAX_AVG_AMPL;
@@ -72,7 +58,7 @@ impl Market {
 
         for (r, price) in new_prices {
             let p = self.prices.get_mut(&r).unwrap();
-            log::debug!("{r:?} {price} ({:?}%)", (price / base_price(&r)) * 100.0);
+            log::debug!("{r:?} {price} ({:?}%)", (price / r.base_price()) * 100.0);
             *p = price;
         }
     }

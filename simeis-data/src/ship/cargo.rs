@@ -32,8 +32,8 @@ impl ShipCargo {
         if self.usage == self.capacity {
             return 0.0;
         } else if (self.usage + added) > self.capacity {
-            let overflow = ((self.usage + added) / self.capacity) - 1.0;
-            amnt -= overflow * amnt;
+            let overflow = (self.usage + added) - self.capacity;
+            amnt -= overflow / res.volume();
             self.usage = self.capacity;
         } else {
             self.usage += added;
@@ -69,4 +69,15 @@ impl ShipCargo {
         let capleft = self.capacity - self.usage;
         capleft / resource.volume()
     }
+}
+
+#[test]
+fn test_cargo_overflow() {
+    let mut cargo = ShipCargo::with_capacity(100.0);
+    let added = cargo.add_resource(&Resource::Stone, 95.0);
+    assert_eq!(added, 95.0);
+
+    let added = cargo.add_resource(&Resource::Stone, 10.0);
+    assert_eq!(added, 5.0);
+    assert_eq!(cargo.usage, cargo.capacity);
 }

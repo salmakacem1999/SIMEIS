@@ -13,6 +13,7 @@ use simeis_data::market::fee_rate;
 use simeis_data::player::{PlayerId, PlayerKey};
 use simeis_data::ship::module::{ShipModuleId, ShipModuleType};
 use simeis_data::ship::resources::Resource;
+use simeis_data::ship::upgrade::ShipUpgrade;
 use simeis_data::ship::ShipId;
 use strum::IntoEnumIterator;
 
@@ -124,7 +125,7 @@ async fn list_shipyard_ships(
 }
 
 #[web::get("/station/{station_id}/shipyard/buy/{id}")]
-async fn shipyard_buy(
+async fn shipyard_buy_ship(
     srv: GameState,
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
@@ -133,6 +134,49 @@ async fn shipyard_buy(
     let player = get_player!(srv, req);
     let station = get_station!(srv, player, station_id);
     build_response(crate::station::buy_ship(player, station, *ship_id))
+}
+
+#[web::get("/station/{station_id}/shipyard/upgrade")]
+async fn shipyard_list_upgrades(
+    srv: GameState,
+    station_id: Path<StationId>,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let player = get_player!(srv, req);
+    let station = get_station!(srv, player, station_id.as_ref());
+    let station = station.read().unwrap();
+    let mut res = BTreeMap::new();
+    for upgr in ShipUpgrade::iter() {
+        res.insert(
+            upgr,
+            serde_json::json!({
+                "price": station.get_ship_upgrade_price(&upgr),
+                "description": upgr.description(),
+            }),
+        );
+    }
+    build_response(Ok(serde_json::to_value(res).unwrap()))
+}
+
+#[web::get("/station/{station_id}/shipyard/upgrade/{ship_id}/{upgrade_type}")]
+async fn shipyard_buy_upgrade(
+    srv: GameState,
+    args: Path<(StationId, ShipId, String)>,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let (station_id, ship_id, upgrade_type) = args.as_ref();
+    let Ok(upgrade_type) = ShipUpgrade::from_str(upgrade_type) else {
+        return build_response(Err(Errcode::InvalidArgument("upgrade type")));
+    };
+    let player = get_player!(srv, req);
+    let station = get_station!(srv, player, station_id);
+    let mut player = player.write().unwrap();
+    let mut station = station.write().unwrap();
+    build_response(
+        player
+            .buy_ship_upgrade(&mut station, ship_id, &upgrade_type)
+            .map(|v| serde_json::json!({ "cost": v })),
+    )
 }
 
 #[web::get("/station/{station_id}/crew/idle")]
@@ -525,8 +569,10 @@ pub fn configure(srv: &mut ServiceConfig) {
         .service(compute_travel_costs)
         .service(get_ship_status)
         .service(ask_navigate)
-        .service(shipyard_buy)
+        .service(shipyard_buy_ship)
         .service(list_shipyard_ships)
+        .service(shipyard_buy_upgrade)
+        .service(shipyard_list_upgrades)
         .service(buy_ship_module)
         .service(get_prices_ship_module)
         .service(start_extraction)

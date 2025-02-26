@@ -11,13 +11,19 @@ pub type GameState = ntex::web::types::State<Game>;
 
 #[ntex::main]
 async fn main() -> std::io::Result<()> {
+    #[cfg(not(feature = "testing"))]
+    let port = 8080;
+
+    #[cfg(feature = "testing")]
+    let port = 9345;
+
     env_logger::builder()
         .parse_default_env()
         .filter_module("ntex_server", log::LevelFilter::Warn)
         .filter_module("ntex_io", log::LevelFilter::Warn)
         .filter_module("ntex_rt", log::LevelFilter::Warn)
         .init();
-    log::info!("Running on http://127.0.0.1:8080");
+    log::info!("Running on http://127.0.0.1:{port}");
     let (gamethread, state) = Game::init();
     let game = state.clone();
 
@@ -29,7 +35,7 @@ async fn main() -> std::io::Result<()> {
             .configure(|srv| api::configure(srv))
     })
     .stop_runtime()
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", port))?
     .run()
     .await;
 

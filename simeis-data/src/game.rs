@@ -50,7 +50,7 @@ impl Game {
         while stop.try_recv().is_err_and(|x| x == TryRecvError::Empty) {
             self.threadloop(&mut rng, &mut market_last_tick);
             let took = Instant::now() - last_iter;
-            std::thread::sleep(sleepmin_iter - took);
+            std::thread::sleep(sleepmin_iter.saturating_sub(took));
             last_iter = Instant::now();
         }
         log::info!("Exiting game thread");

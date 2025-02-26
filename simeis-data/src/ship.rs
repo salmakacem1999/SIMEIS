@@ -18,6 +18,7 @@ pub mod module;
 pub mod navigation;
 pub mod resources;
 pub mod shipstats;
+pub mod upgrade;
 
 const PILOT_FUEL_SHARE: u8 = 5; // Rank 10 = 4/5 fuel consumption
 const HULL_USAGE_BASE: f64 = 0.15;
@@ -73,6 +74,20 @@ impl Ship {
             Ship::medium(rng.random(), position),
             Ship::heavy(rng.random(), position),
         ]
+    }
+
+    pub fn random(position: SpaceCoord) -> Ship {
+        let mut rng = rand::rng();
+        let cargo_cap = rng.random_range(100.0..10000.0) as f64;
+        Ship {
+            id: rng.random(),
+            position,
+            reactor_power: rng.random_range(1..10),
+            fuel_tank_capacity: rng.random_range(1..10000) as f64,
+            cargo: ShipCargo::with_capacity(cargo_cap),
+            hull_decay_capacity: rng.random_range(1000..50000) as f64,
+            ..Default::default()
+        }
     }
 
     fn light(id: ShipId, position: SpaceCoord) -> Ship {

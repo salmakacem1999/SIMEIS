@@ -127,6 +127,7 @@ class Tester:
         got = self.request(endpoint, **kwargs)
         self.addtrace("Expect this data to be OK")
         assert got["error"] == "ok"
+        del got["error"]
         return got
 
     def assert_error(self, endpoint, errtype=None, **kwargs):
@@ -524,6 +525,33 @@ class Tester:
         cargobefore = self.assert_ok(f"/station/{stationid}/cargo")
         tx = self.assert_ok(f"/market/{self.station}/buy/stone/5000")
         assert self.assert_got(tx, "added_cargo", None)[1] < 5000
+
+    # Uses environment of previous test
+    @functest
+    def test_ship_upgrade(self):
+        player = self.assert_ok(f"/player/{self.id}")
+        shipid = self.buy_a_ship()
+        stationid = list(player["stations"].keys())[0]
+        all_upg = self.assert_ok(f"/station/{stationid}/shipyard/upgrade")
+        for (upgr, data) in all_upg.items():
+            assert self.assert_got(data, "price", None) > 100.0
+            assert len(self.assert_got(data, "description", None)) > 0
+
+        before = self.assert_ok(f"/ship/{shipid}")
+
+        got = self.assert_ok(f"/station/{stationid}/shipyard/upgrade/{shipid}/cargoexpansion")
+        assert self.assert_got(got, "cost", None) > 0
+
+        got = self.assert_ok(f"/station/{stationid}/shipyard/upgrade/{shipid}/reactorupgrade")
+        assert self.assert_got(got, "cost", None) > 0
+
+        got = self.assert_ok(f"/station/{stationid}/shipyard/upgrade/{shipid}/hullupgrade")
+        assert self.assert_got(got, "cost", None) > 0
+
+        after = self.assert_ok(f"/ship/{shipid}")
+        assert after["cargo"]["capacity"] > before["cargo"]["capacity"]
+        assert after["reactor_power"] > before["reactor_power"]
+        assert after["hull_decay_capacity"] > before["hull_decay_capacity"]
 
 def compute_distance(a, b):
     sum = 0

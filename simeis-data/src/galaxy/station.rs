@@ -7,6 +7,7 @@ use crate::player::Player;
 use crate::ship::cargo::ShipCargo;
 use crate::ship::module::ShipModuleId;
 use crate::ship::resources::Resource;
+use crate::ship::upgrade::ShipUpgrade;
 use crate::ship::Ship;
 
 use super::scan::ScanResult;
@@ -25,11 +26,12 @@ pub struct StationInfo {
     pub position: SpaceCoord,
 }
 
-impl From<&Station> for StationInfo {
-    fn from(value: &Station) -> Self {
+impl StationInfo {
+    // TODO (#27) Based on the scanner rank, get informations on crew and cargo
+    pub fn scan(_rank: u8, station: &Station) -> StationInfo {
         StationInfo {
-            id: value.id,
-            position: value.position,
+            id: station.id,
+            position: station.position,
         }
     }
 }
@@ -60,7 +62,7 @@ impl Station {
 
     // TODO (#27) Allow to build improvements for the scanner
     pub fn scan(&self, galaxy: &Galaxy) -> ScanResult {
-        galaxy.scan_sector(&self.position, 0.0)
+        galaxy.scan_sector(1, &self.position)
     }
 
     pub fn cargo_price(&self) -> f64 {
@@ -200,6 +202,11 @@ impl Station {
         ship.fuel_tank += unloaded;
         debug_assert!(ship.fuel_tank_capacity >= ship.fuel_tank);
         Ok(unloaded)
+    }
+
+    pub fn get_ship_upgrade_price(&self, upgrade: &ShipUpgrade) -> f64 {
+        // TODO (#22) Modify price based on station economy metrics
+        upgrade.get_price()
     }
 }
 

@@ -153,11 +153,12 @@ impl Galaxy {
         Some(planet.clone())
     }
 
-    pub fn scan_sector(&self, center: &SpaceCoord, strengh: f64) -> ScanResult {
+    pub fn scan_sector(&self, rank: u8, center: &SpaceCoord) -> ScanResult {
+        let strengh = (rank - 1) as f64;
         let mut results = ScanResult::empty();
         for sector in sectors_around(center, strengh) {
             for obj in self.0.read().unwrap().list_objects_in_sector(sector) {
-                results.add(obj);
+                results.add(rank, obj);
             }
         }
         results

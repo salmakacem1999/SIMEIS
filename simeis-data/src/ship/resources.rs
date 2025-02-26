@@ -36,6 +36,20 @@ pub enum Resource {
 }
 
 impl Resource {
+    // TODO (#24) Get from configuration
+    #[inline]
+    pub const fn base_price(&self) -> f64 {
+        match self {
+            Resource::Stone => 3.0,
+            Resource::Iron => 8.0,
+
+            Resource::Helium => 3.0,
+            Resource::Ozone => 8.0,
+
+            Resource::Fuel => 4.0,
+        }
+    }
+
     pub fn volume(&self) -> f64 {
         match self {
             Resource::Stone => 1.0,

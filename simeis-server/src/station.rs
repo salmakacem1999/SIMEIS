@@ -1,7 +1,12 @@
 use std::sync::{Arc, RwLock};
 
 use serde_json::json;
-use simeis_data::{errors::Errcode, galaxy::station::Station, player::Player, ship::ShipId};
+use simeis_data::{
+    errors::Errcode,
+    galaxy::station::Station,
+    player::Player,
+    ship::{Ship, ShipId},
+};
 
 use crate::api::ApiResult;
 
@@ -48,11 +53,15 @@ pub fn buy_ship(
     }
 
     let mut player = player.write().unwrap();
-    let mut ship = station.write().unwrap().shipyard.remove(index);
+    let mut station = station.write().unwrap();
+    let mut ship = station.shipyard.remove(index);
     ship.update_perf_stats();
     ship.fuel_tank = ship.fuel_tank_capacity;
     player.money -= price;
     player.ships.insert(id, ship);
+
+    let pos = station.position;
+    station.shipyard.push(Ship::random(pos));
 
     Ok(json!({}))
 }
