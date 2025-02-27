@@ -33,6 +33,7 @@ pub enum Resource {
 
     // Crafted
     Fuel,
+    HullPlate,
 }
 
 impl Resource {
@@ -46,17 +47,19 @@ impl Resource {
             Resource::Helium => 3.0,
             Resource::Ozone => 8.0,
 
-            Resource::Fuel => 4.0,
+            Resource::Fuel => 5.0,
+            Resource::HullPlate => 4.0,
         }
     }
 
     pub fn volume(&self) -> f64 {
         match self {
-            Resource::Stone => 1.0,
-            Resource::Iron => 0.5,
-            Resource::Helium => 1.0,
-            Resource::Ozone => 0.5,
+            Resource::Stone => 0.5,
+            Resource::Iron => 0.3,
+            Resource::Helium => 0.5,
+            Resource::Ozone => 0.3,
             Resource::Fuel => 2.0,
+            Resource::HullPlate => 0.05,
         }
     }
 

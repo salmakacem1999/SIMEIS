@@ -203,19 +203,23 @@ impl Ship {
         Ok(cost)
     }
 
-    pub fn update_flight(&mut self, tdelta: f64) -> bool {
+    pub fn update_flight(&mut self, mut tdelta: f64) -> bool {
         let ShipState::InFlight(ref mut data) = self.state else {
             unreachable!();
         };
 
-        let dist_delta = self.stats.speed * tdelta;
+        let mut finished = false;
+        let mut dist_delta = self.stats.speed * tdelta;
         data.dist_done += dist_delta;
-        if data.dist_done >= data.dist_tot {
-            self.position = data.destination;
-            log::debug!("Ship {} reached its destination", self.id);
-            return true;
+        if data.dist_done > data.dist_tot {
+            let doverflow = data.dist_done - data.dist_tot;
+            data.dist_done -= doverflow;
+            dist_delta -= doverflow;
+            let toverflow = doverflow / self.stats.speed;
+            tdelta -= toverflow;
+            finished = true;
         }
-        self.position = translation(data.start, data.direction, data.dist_done);
+
         self.fuel_tank -= self.stats.fuel_consumption * tdelta;
         if self.fuel_tank <= 0.0 {
             self.fuel_tank = 0.0;
@@ -229,7 +233,14 @@ impl Ship {
             return true;
         }
 
-        false
+        self.position = translation(data.start, data.direction, data.dist_done);
+
+        if finished {
+            debug_assert_eq!(self.position, data.destination);
+        } else {
+            debug_assert_ne!(self.position, data.destination);
+        }
+        finished
     }
 
     pub fn start_extraction(&mut self, galaxy: &Galaxy) -> Result<ExtractionInfo, Errcode> {

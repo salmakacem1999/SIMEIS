@@ -20,6 +20,7 @@ const STATION_INIT_CARGO: f64 = 1000.0;
 
 pub type StationId = u16;
 
+// TODO (#43) Add refineries to create fuel & hull plate from raw resources
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StationInfo {
     pub id: StationId,
@@ -196,11 +197,38 @@ impl Station {
         if *qty == 0.0 {
             return Err(Errcode::NoFuelInCargo);
         }
+        debug_assert!(ship.fuel_tank >= 0.0);
         debug_assert!(ship.fuel_tank_capacity >= ship.fuel_tank);
         let needed = ship.fuel_tank_capacity - ship.fuel_tank;
         let unloaded = self.cargo.unload(&Resource::Fuel, needed.min(*qty));
         ship.fuel_tank += unloaded;
         debug_assert!(ship.fuel_tank_capacity >= ship.fuel_tank);
+        Ok(unloaded)
+    }
+
+    pub fn repair_ship(&mut self, ship: &mut Ship) -> Result<f64, Errcode> {
+        let Some(qty) = self.cargo.resources.get(&Resource::HullPlate) else {
+            return Err(Errcode::NoHullPlateInCargo);
+        };
+        if *qty == 0.0 {
+            return Err(Errcode::NoHullPlateInCargo);
+        }
+        debug_assert!(ship.hull_decay_capacity >= ship.hull_decay);
+
+        let amnt = ship.hull_decay.min(*qty);
+        if amnt == 0.0 {
+            return Ok(0.0);
+        }
+        let unloaded = self.cargo.unload(&Resource::HullPlate, amnt);
+        ship.hull_decay -= unloaded;
+        debug_assert!(
+            ship.hull_decay_capacity >= ship.hull_decay,
+            "{} < {}",
+            ship.hull_decay_capacity,
+            ship.hull_decay
+        );
+        debug_assert!(ship.hull_decay >= 0.0, "{}", ship.hull_decay);
+        debug_assert!(unloaded >= 0.0, "{}", unloaded);
         Ok(unloaded)
     }
 

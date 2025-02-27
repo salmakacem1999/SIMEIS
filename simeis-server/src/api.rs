@@ -372,7 +372,29 @@ async fn refuel_ship(
     build_response(
         station
             .refuel_ship(ship)
-            .map(|v| serde_json::json!({"fuel": v})),
+            .map(|v| serde_json::json!({"added-fuel": v})),
+    )
+}
+
+#[web::get("/station/{station_id}/repair/{ship_id}")]
+async fn repair_ship(
+    srv: GameState,
+    args: Path<(StationId, ShipId)>,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let (station_id, ship_id) = args.as_ref();
+    let player = get_player!(srv, req);
+    let station = get_station!(srv, player, station_id);
+    let mut station = station.write().unwrap();
+    let mut player = player.write().unwrap();
+    let Some(ship) = player.ships.get_mut(ship_id) else {
+        return build_response(Err(Errcode::ShipNotFound(*ship_id)));
+    };
+
+    build_response(
+        station
+            .repair_ship(ship)
+            .map(|v| serde_json::json!({"added-hull": v})),
     )
 }
 
@@ -582,6 +604,7 @@ pub fn configure(srv: &mut ServiceConfig) {
         .service(get_station_cargo_price)
         .service(buy_station_cargo)
         .service(refuel_ship)
+        .service(repair_ship)
         .service(get_fee_rate)
         .service(get_market_prices)
         .service(buy_resource)

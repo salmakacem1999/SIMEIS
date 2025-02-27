@@ -118,10 +118,15 @@ class Tester:
         ship = after["ships"][retind]
         return self.assert_got(ship, "id", None)
 
-    def setup_crew(self, shipid):
+    def setup_crew(self, shipid, trader=True):
         pilot = self.assert_ok(f"/station/{self.station}/crew/hire/pilot")
         pilotid = self.assert_got(pilot, "id", None)
         self.assert_ok(f"/station/{self.station}/crew/assign/{pilotid}/{shipid}/pilot")
+
+        if trader:
+            trader = self.assert_ok(f"/station/{self.station}/crew/hire/trader")
+            traderid = self.assert_got(trader, "id", None)
+            self.assert_ok(f"/station/{self.station}/crew/assign/{traderid}/trading")
 
     def assert_ok(self, endpoint, **kwargs):
         got = self.request(endpoint, **kwargs)
@@ -155,6 +160,11 @@ class Tester:
             self.addtrace(f"Expect data[{key}] to have value {val}")
             assert data[key] == val
         return data[key]
+
+    def assert_cmpf(self, a, b, eps=0.0000001):
+        diff = abs(a - b)
+        self.addtrace(f"Assert {diff} < {eps}")
+        assert diff < eps
 
     @functest
     def test_ping(self):
@@ -338,8 +348,15 @@ class Tester:
         after = self.assert_ok(f"/ship/{ship_id}")
         self.assert_got(after, "state", "Idle")
         afterpos = self.assert_got(after, "position", None)
-        assert self.assert_got(after, "fuel_tank", None) < self.assert_got(before, "fuel_tank", None)
-        assert self.assert_got(after, "hull_decay", None) > self.assert_got(before, "hull_decay", None)
+
+        self.assert_cmpf(
+            self.assert_got(after, "fuel_tank", None),
+            self.assert_got(before, "fuel_tank", None) - cost["fuel_consumption"],
+        )
+        self.assert_cmpf(
+            self.assert_got(after, "hull_decay", None),
+            self.assert_got(before, "hull_decay", None) + cost["hull_usage"],
+        )
 
         self.addtrace(
             "nadd = ", nadd,
@@ -359,10 +376,15 @@ class Tester:
         self.addtrace("start", afterpos, "now", back["position"])
         self.addtrace("want", shippos, "got", back["position"])
         pos = self.assert_got(back, "position", shippos)
-        assert self.assert_got(back, "fuel_tank", None) < self.assert_got(after, "fuel_tank", None)
-        assert self.assert_got(back, "hull_decay", None) > self.assert_got(after, "hull_decay", None)
-        assert self.assert_got(back, "fuel_tank", None) < self.assert_got(before, "fuel_tank", None)
-        assert self.assert_got(back, "hull_decay", None) > self.assert_got(before, "hull_decay", None)
+
+        self.assert_cmpf(
+            self.assert_got(back, "fuel_tank", None),
+            self.assert_got(after, "fuel_tank", None) - cost["fuel_consumption"],
+        )
+        self.assert_cmpf(
+            self.assert_got(back, "hull_decay", None),
+            self.assert_got(after, "hull_decay", None) + cost["hull_usage"],
+        )
 
     @functest
     def test_scan(self):
@@ -381,7 +403,7 @@ class Tester:
     def test_extract(self):
         self.create_test_player("test-rich-extract")
         shipid = self.buy_a_ship()
-        self.setup_crew(shipid)
+        self.setup_crew(shipid, trader=False)
 
         got = self.assert_ok(f"/station/{self.station}/shop/modules/{shipid}/buy/miner")
         modid = self.assert_got(got, "id", 1)
@@ -488,6 +510,8 @@ class Tester:
         )
 
         player = self.assert_ok(f"/player/{self.id}")
+        costs = player["costs"]
+        tstart = time.time()
         beforemoney = self.assert_got(player, "money", None)
         tx = self.assert_ok(f"/market/{self.station}/sell/{resname}/{resamnt}")
         afterplayer = self.assert_ok(f"/player/{self.id}")
@@ -499,7 +523,8 @@ class Tester:
             "Difference: ",
             aftermoney - (beforemoney + tx["added_money"])
         )
-        assert round(aftermoney, 4) == round(beforemoney + tx["added_money"], 4)
+        tdelta = time.time() - tstart
+        assert aftermoney - (beforemoney + tx["added_money"]) < (tdelta * costs)
 
         cargo = self.assert_ok(f"/station/{self.station}/cargo")
         self.assert_got(cargo, "resources", {resname.capitalize(): 0.0})
@@ -520,7 +545,7 @@ class Tester:
         cargo = self.assert_ok(f"/station/{self.station}/cargo")
         res = self.assert_got(cargo, "resources", None)
         self.assert_got(res, "Stone", 50)
-        self.assert_got(cargo, "usage", 50)
+        self.assert_got(cargo, "usage", 25)
 
         cargobefore = self.assert_ok(f"/station/{stationid}/cargo")
         tx = self.assert_ok(f"/market/{self.station}/buy/stone/5000")
@@ -552,6 +577,50 @@ class Tester:
         assert after["cargo"]["capacity"] > before["cargo"]["capacity"]
         assert after["reactor_power"] > before["reactor_power"]
         assert after["hull_decay_capacity"] > before["hull_decay_capacity"]
+
+    # Uses environment of previous test
+    @functest
+    def test_repair_refuel(self):
+        player = self.create_test_player("test-rich-refuel-repair")
+        shipid =  self.buy_a_ship()
+        self.setup_crew(shipid)
+
+        src = list(player["stations"].values())[0]
+        cost = self.assert_ok(f"/ship/{shipid}/navigate/{src[0]+30}/{src[1]+30}/{src[2]+30}")
+        time.sleep(cost["duration"] + 0.2)
+        cost = self.assert_ok(f"/ship/{shipid}/navigate/{src[0]}/{src[1]}/{src[2]}")
+        time.sleep(cost["duration"] + 0.2)
+
+        ship = self.assert_ok(f"/ship/{shipid}")
+        hull_decay = self.assert_got(ship, "hull_decay", None)
+        hull_decay_capacity = self.assert_got(ship, "hull_decay_capacity", None)
+        assert hull_decay > 0
+        assert hull_decay < hull_decay_capacity
+
+        fuel = self.assert_got(ship, "fuel_tank", None)
+        fuel_tank = self.assert_got(ship, "fuel_tank_capacity", None)
+        assert fuel < fuel_tank
+        assert fuel > 0
+
+        before = (fuel, hull_decay)
+        need = (fuel_tank - fuel, hull_decay)
+
+        self.assert_error(
+            f"/station/{self.station}/refuel/{shipid}",
+            errtype="NoFuelInCargo"
+        )
+        self.assert_error(
+            f"/station/{self.station}/repair/{shipid}",
+            errtype="NoHullPlateInCargo"
+        )
+
+        self.assert_ok(f"/market/{self.station}/buy/fuel/{need[0] * 2}")
+        got = self.assert_ok(f"/station/{self.station}/refuel/{shipid}")
+        self.assert_got(got, "added-fuel", need[0])
+
+        self.assert_ok(f"/market/{self.station}/buy/hullplate/{need[1] * 2}")
+        got = self.assert_ok(f"/station/{self.station}/repair/{shipid}")
+        self.assert_got(got, "added-hull", need[1])
 
 def compute_distance(a, b):
     sum = 0
