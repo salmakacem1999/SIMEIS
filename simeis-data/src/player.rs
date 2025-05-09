@@ -1,6 +1,7 @@
 use rand::RngCore;
+use std::hash::Hasher;
 use std::collections::BTreeMap;
-use std::hash::{DefaultHasher, Hasher};
+use std::collections::hash_map::DefaultHasher;
 
 use crate::crew::CrewId;
 use crate::errors::Errcode;
