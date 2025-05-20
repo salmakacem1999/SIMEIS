@@ -169,11 +169,6 @@ impl Ship {
             self.stats.speed = 0.0;
         };
         self.stats.speed *= 1.0 - self.cargo.slowing_ratio();
-
-        #[cfg(feature = "testing")]
-        {
-            self.stats.speed *= 100.0
-        };
     }
 
     pub fn compute_travel_costs(&self, destination: SpaceCoord) -> Result<TravelCost, Errcode> {
@@ -208,13 +203,17 @@ impl Ship {
         let mut dist_delta = self.stats.speed * tdelta;
         data.dist_done += dist_delta;
         if data.dist_done > data.dist_tot {
+            finished = true;
             let doverflow = data.dist_done - data.dist_tot;
             data.dist_done -= doverflow;
             dist_delta -= doverflow;
+
             let toverflow = doverflow / self.stats.speed;
             tdelta -= toverflow;
-            finished = true;
+            debug_assert!(((tdelta * self.stats.speed) - dist_delta).abs() < 1e-7);
         }
+
+        self.position = translation(data.start, data.direction, data.dist_done);
 
         self.fuel_tank -= self.stats.fuel_consumption * tdelta;
         if self.fuel_tank <= 0.0 {
@@ -229,12 +228,16 @@ impl Ship {
             return true;
         }
 
-        self.position = translation(data.start, data.direction, data.dist_done);
-
         if finished {
             debug_assert_eq!(self.position, data.destination);
         }
         finished
+    }
+
+    pub fn stop_navigation(&mut self) -> Result<SpaceCoord, Errcode> {
+        log::debug!("Stopping flight on ship {}", self.id);
+        self.state = ShipState::Idle;
+        return Ok(self.position)
     }
 
     pub fn start_extraction(&mut self, galaxy: &Galaxy) -> Result<ExtractionInfo, Errcode> {

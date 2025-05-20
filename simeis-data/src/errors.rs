@@ -27,6 +27,7 @@ pub enum Errcode {
     NoHullPlateInCargo,
     CrewMemberNotFound(crate::crew::CrewId),
     PlayerLost,
+    GameSignalSend,
 }
 
 impl Errcode {
@@ -67,6 +68,7 @@ impl Errcode {
             Errcode::CrewMemberNotFound(id) => format!("Crew member of id {id} not found"),
             Errcode::PlayerLost => "This player lost the game and cannot play anymore".to_string(),
             Errcode::NoPilotAssigned => "No pilot is assigned on this ship".to_string(),
+            Errcode::GameSignalSend => "Error while sending a game signal to state".to_string(),
         }
     }
 }

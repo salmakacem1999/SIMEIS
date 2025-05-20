@@ -11,6 +11,8 @@ TESTS = []
 
 FAILFAST=os.getenv("CI") is None
 
+ITER_PERIOD = 20 / 1000
+
 def functest(f):
     assert f.__name__.startswith("test_")
     name = f.__name__.removeprefix("test_").replace("_", " ").capitalize()
@@ -100,14 +102,29 @@ class Tester:
             assert "error" in data.keys()
             return data
 
+    def tick(self):
+        self.request("/tick")
+
+    def tick_dur(self, ts):
+        ntick = ts / ITER_PERIOD
+        assert ntick > 0
+        if (ntick % 1) > 0:
+            ntick = int(ntick) + 1
+        else:
+            ntick = int(ntick)
+        for _ in range(0, ntick):
+            self.tick()
+
     def create_test_player(self, name=None):
         if name is None:
             name = "TestPlayer_" + self.current_test.replace(" ", "_").lower()
         got = self.assert_ok("/player/new/" + name)
         self.key = self.assert_got(got, "key", None)
         self.id = self.assert_got(got, "playerId", None)
+        self.tick()
         player = self.assert_ok(f"/player/{self.id}")
         self.station = list(self.assert_got(player, "stations", None).keys())[0]
+        self.tick()
         return player
 
     def buy_a_ship(self, retind=0):
@@ -118,6 +135,7 @@ class Tester:
         for ship in shiplist:
             if ship["price"] <= player["money"]:
                 self.assert_ok(f"/station/{self.station}/shipyard/buy/" + str(ship["id"]))
+                self.tick()
         after = self.assert_ok(f"/player/{self.id}")
         assert len(after["ships"]) > 0
         ship = after["ships"][retind]
@@ -127,11 +145,13 @@ class Tester:
         pilot = self.assert_ok(f"/station/{self.station}/crew/hire/pilot")
         pilotid = self.assert_got(pilot, "id", None)
         self.assert_ok(f"/station/{self.station}/crew/assign/{pilotid}/{shipid}/pilot")
+        self.tick()
 
         if trader:
             trader = self.assert_ok(f"/station/{self.station}/crew/hire/trader")
             traderid = self.assert_got(trader, "id", None)
             self.assert_ok(f"/station/{self.station}/crew/assign/{traderid}/trading")
+        self.tick()
 
     def assert_ok(self, endpoint, **kwargs):
         got = self.request(endpoint, **kwargs)
@@ -162,13 +182,17 @@ class Tester:
             return None
 
         if val is not None:
-            self.addtrace(f"Expect data[{key}] to have value {val}")
+            self.addtrace(f"Expect data[{key}] to have value {val}, got", data[key])
             assert data[key] == val
         return data[key]
 
     def assert_cmpf(self, a, b, eps=0.0000001):
         diff = abs(a - b)
         self.addtrace(f"Assert {diff} < {eps}")
+        if a > b:
+            self.addtrace("Left is higher")
+        elif a < b:
+            self.addtrace("Right is higher")
         assert diff < eps
 
     @functest
@@ -201,15 +225,13 @@ class Tester:
 
     @functest
     def test_syslog(self):
-        ts = time.time()
         self.create_test_player()
-        time.sleep(0.3)
+
         got = self.assert_ok("/syslogs")
         nb = self.assert_got(got, "nb", 1)
         ev = self.assert_got(got, "events", None)[0]
         self.assert_got(ev, "type", "GameStarted")
         self.assert_got(ev, "event", "GameStarted")
-        assert ts < self.assert_got(ev, "timestamp", None)
 
     @functest
     def test_shipyard(self):
@@ -276,11 +298,13 @@ class Tester:
         self.assert_ok(f"/station/{self.station}/crew/hire/pilot")
         before = self.assert_ok(f"/player/{self.id}")
         costs = self.assert_got(before, "costs", None)
-        time.sleep(0.3)
+        self.tick()
+        self.tick()
+
         after = self.assert_ok(f"/player/{self.id}")
         self.assert_cmpf(
             self.assert_got(after, "money", None),
-            self.assert_got(before, "money", None) - (costs * 0.3),
+            self.assert_got(before, "money", None) - (costs * ITER_PERIOD * 2),
             eps=costs * 0.075,
         )
 
@@ -357,18 +381,83 @@ class Tester:
         self.assert_got(far, "hull_usage", 2 * self.assert_got(close, "hull_usage", None))
         self.assert_got(close, "direction", self.assert_got(far, "direction", None))
 
-        nadd = int(0.5 / close["duration"]) + 1
+        nadd = (int(ITER_PERIOD / close["duration"]) + 1) * 10
+        self.addtrace("NADD", nadd)
+
         before = self.assert_ok(f"/ship/{ship_id}")
-        beforepos = self.assert_got(before, "position", None)
         self.assert_got(before, "state", "Idle")
-        cost = self.assert_ok(f"/ship/{ship_id}/navigate/{shippos[0]+nadd}/{shippos[1]+nadd}/{shippos[2]+nadd}")
-        time.sleep(0.2)
+        beforepos = self.assert_got(before, "position", None)
+
+        dst = [shippos[0] + nadd, shippos[1] + nadd, shippos[2] + nadd]
+        cost = self.assert_ok(f"/ship/{ship_id}/navigate/{dst[0]}/{dst[1]}/{dst[2]}")
+
+        self.tick()
+        self.tick()
+        self.tick()
+        self.tick()
+        self.tick()
+        done = (5*ITER_PERIOD) / cost["duration"]
+
         during = self.assert_ok(f"/ship/{ship_id}")
-        assert self.assert_got(during, "state", None) != "Idle"
         pos = self.assert_got(during, "position", None)
+        stoppos = self.assert_got(
+            self.assert_ok(f"/ship/{ship_id}/navigation/stop"),
+            "position",
+            pos
+        )
+
+        assert self.assert_got(during, "state", None) != "Idle"
         assert (pos[0] > shippos[0]) and (pos[1] > shippos[1]) and (pos[2] > shippos[2])
         assert (pos[0] < shippos[0]+nadd) and (pos[1] < shippos[1]+nadd) and (pos[2] < shippos[2]+nadd)
-        time.sleep(cost["duration"])
+
+
+        stopped = self.assert_ok(f"/ship/{ship_id}")
+        pos = self.assert_got(stopped, "position", stoppos)
+        assert (pos[0] > shippos[0]) and (pos[1] > shippos[1]) and (pos[2] > shippos[2])
+        assert (pos[0] < shippos[0]+nadd) and (pos[1] < shippos[1]+nadd) and (pos[2] < shippos[2]+nadd)
+        self.assert_got(stopped, "state", "Idle")
+
+        self.addtrace("Testing fuel and hull usage after stopping mid-travel ({}%)".format(done * 100))
+        self.assert_cmpf(
+            self.assert_got(stopped, "fuel_tank", None),
+            self.assert_got(before, "fuel_tank", None) - (cost["fuel_consumption"] * done),
+        )
+        self.addtrace("Testing the hull usage")
+        self.assert_cmpf(
+            self.assert_got(stopped, "hull_decay", None),
+            (cost["hull_usage"] * done),
+        )
+
+        costmid = self.assert_ok(f"/ship/{ship_id}/travelcost/{dst[0]}/{dst[1]}/{dst[2]}")
+        assert self.assert_got(costmid, "fuel_consumption", None) < cost["fuel_consumption"]
+        assert self.assert_got(costmid, "hull_usage", None) < cost["hull_usage"]
+        assert self.assert_got(costmid, "distance", None) < cost["distance"]
+        assert self.assert_got(costmid, "duration", None) < cost["duration"]
+
+        costret = self.assert_ok(f"/ship/{ship_id}/travelcost/{shippos[0]}/{shippos[1]}/{shippos[2]}")
+
+        # TODO IMPORTANT FIXME    Should be equal
+        self.addtrace(costret["fuel_consumption"], stopped["fuel_tank"], before["fuel_tank"])
+        self.assert_cmpf(
+            costret["fuel_consumption"] + stopped["fuel_tank"],
+            before["fuel_tank"]
+        )
+
+        self.assert_cmpf(
+            self.assert_got(costret, "fuel_consumption", None) + costmid["fuel_consumption"],
+            cost["fuel_consumption"]
+        )
+        self.assert_cmpf(
+            stopped["hull_decay"] + costret["hull_usage"],
+            before["hull_decay"]
+        )
+        self.assert_cmpf(
+            self.assert_got(costret, "hull_usage", None) + costmid["hull_usage"],
+            cost["hull_usage"]
+        )
+
+        self.assert_ok(f"/ship/{ship_id}/navigate/{dst[0]}/{dst[1]}/{dst[2]}")
+        self.tick_dur(cost["duration"])
 
         after = self.assert_ok(f"/ship/{ship_id}")
         self.assert_got(after, "state", "Idle")
@@ -376,7 +465,16 @@ class Tester:
 
         self.assert_cmpf(
             self.assert_got(after, "fuel_tank", None),
+            self.assert_got(stopped, "fuel_tank", None) - costmid["fuel_consumption"],
+        )
+        self.assert_cmpf(
+            self.assert_got(after, "fuel_tank", None),
             self.assert_got(before, "fuel_tank", None) - cost["fuel_consumption"],
+        )
+
+        self.assert_cmpf(
+            self.assert_got(after, "hull_decay", None),
+            self.assert_got(stopped, "hull_decay", None) - costmid["hull_usage"],
         )
         self.assert_cmpf(
             self.assert_got(after, "hull_decay", None),
@@ -395,7 +493,7 @@ class Tester:
         assert (afterpos[2] - beforepos[2]) == nadd
 
         cost = self.assert_ok(f"/ship/{ship_id}/navigate/{shippos[0]}/{shippos[1]}/{shippos[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         back = self.assert_ok(f"/ship/{ship_id}")
         self.addtrace("start", afterpos, "now", back["position"])
@@ -460,18 +558,18 @@ class Tester:
 
         dest = best["position"]
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{dest[0]}/{dest[1]}/{dest[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         ship = self.assert_ok(f"/ship/{shipid}")
         self.assert_got(ship, "state", "Idle")
         self.addtrace("Ship arrived")
         extraction_rates = self.assert_ok(f"/ship/{shipid}/extraction/start")
         assert ("Stone" in extraction_rates) or ("Helium" in extraction_rates)
-        time.sleep(0.5)
+        self.tick()
 
         before = self.assert_ok(f"/ship/{shipid}")
         cargob = self.assert_got(before, "cargo", None)
-        time.sleep(0.5)
+        self.tick()
 
         after = self.assert_ok(f"/ship/{shipid}")
         cargoa = self.assert_got(after, "cargo", None)
@@ -496,7 +594,7 @@ class Tester:
 
         dest = player["stations"][stationid]
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{dest[0]}/{dest[1]}/{dest[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         resname = list(ship["cargo"]["resources"].keys())[0]
         resamnt = ship["cargo"]["resources"][resname]
@@ -621,9 +719,10 @@ class Tester:
 
         src = list(player["stations"].values())[0]
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{src[0]+30}/{src[1]+30}/{src[2]+30}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
+
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{src[0]}/{src[1]}/{src[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         ship = self.assert_ok(f"/ship/{shipid}")
         hull_decay = self.assert_got(ship, "hull_decay", None)
@@ -686,7 +785,7 @@ class Tester:
 
         dest = best["position"]
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{dest[0]}/{dest[1]}/{dest[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         ship = self.assert_ok(f"/ship/{shipid}")
         self.assert_got(ship, "state", "Idle")
@@ -694,28 +793,30 @@ class Tester:
         old_extraction_rates = self.assert_ok(f"/ship/{shipid}/extraction/start")
 
         assert ("Stone" in old_extraction_rates) or ("Helium" in old_extraction_rates)
-        time.sleep(0.5)
+        self.tick()
+        self.tick()
         self.assert_ok(f"/ship/{shipid}/extraction/stop")
 
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{stationpos[0]}/{stationpos[1]}/{stationpos[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         got = self.assert_ok(f"/station/{self.station}/shop/modules/{shipid}/upgrade/1")
         self.assert_got(got, "cost", 5000)
         self.assert_got(got, "new-rank", 2)
 
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{dest[0]}/{dest[1]}/{dest[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         new_extraction_rates = self.assert_ok(f"/ship/{shipid}/extraction/start")
         for res, rate in new_extraction_rates.items():
             assert rate > old_extraction_rates[res]
         self.test_crew_upg_extraction_rate = new_extraction_rates # For next test
-        time.sleep(0.5)
+        self.tick()
+        self.tick()
         self.assert_ok(f"/ship/{shipid}/extraction/stop")
 
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{stationpos[0]}/{stationpos[1]}/{stationpos[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
     # Uses environment from previous test
     @functest
@@ -768,7 +869,7 @@ class Tester:
         newt = self.assert_got(cost, "duration", None)
         self.addtrace("New travel duration", newt, "< old travel duration", oldt)
         assert newt < oldt
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         need_solid = list(ship["modules"].values())[0]["modtype"] == "Miner"
         scan = self.assert_ok(f"/station/{self.station}/scan")
@@ -781,7 +882,7 @@ class Tester:
 
         dest = best["position"]
         cost = self.assert_ok(f"/ship/{shipid}/navigate/{dest[0]}/{dest[1]}/{dest[2]}")
-        time.sleep(cost["duration"] + 0.2)
+        self.tick_dur(cost["duration"])
 
         new_extraction_rates = self.assert_ok(f"/ship/{shipid}/extraction/start")
         for res, rate in self.test_crew_upg_extraction_rate.items():

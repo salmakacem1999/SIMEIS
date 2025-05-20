@@ -104,13 +104,15 @@ impl SyslogRecv {
     }
 
     pub fn update(&self) {
-        match self.recv.try_recv() {
-            Ok((id, ns, evt)) => self.add_to_fifo(id, ns, evt),
-            Err(TryRecvError::Empty) => {}
-            Err(e) => {
-                let msg = format!("Error while receiving syslog: {e:?}");
-                log::error!("{}", msg);
-                panic!("{}", msg);
+        loop {
+            match self.recv.try_recv() {
+                Ok((id, ns, evt)) => self.add_to_fifo(id, ns, evt),
+                Err(TryRecvError::Empty) => break,
+                Err(e) => {
+                    let msg = format!("Error while receiving syslog: {e:?}");
+                    log::error!("{}", msg);
+                    panic!("{}", msg);
+                }
             }
         }
     }

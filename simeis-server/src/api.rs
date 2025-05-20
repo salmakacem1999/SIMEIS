@@ -5,7 +5,7 @@ use std::str::FromStr;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use ntex::web::types::Path;
 use ntex::web::{self, HttpRequest, HttpResponse, ServiceConfig};
-use serde_json::{json, Value};
+use serde_json::{json, to_value, Value};
 use simeis_data::crew::{CrewId, CrewMemberType};
 use simeis_data::galaxy::station::StationId;
 use simeis_data::galaxy::SpaceUnit;
@@ -18,11 +18,13 @@ use simeis_data::ship::ShipId;
 use simeis_data::syslog::SyslogEvent;
 use strum::IntoEnumIterator;
 
-pub type ApiResult = Result<serde_json::Value, Errcode>;
+pub type ApiResult = Result<Value, Errcode>;
 
 use simeis_data::errors::Errcode;
 
 use crate::GameState;
+
+// TODO Use POST queries also, instead of everything with GET
 
 // TODO (#35) Use query parameters (with ntex::web::types::Query) instead of plain URLs
 
@@ -83,11 +85,11 @@ pub fn jsonmerge(a: &mut Value, b: &Value) {
 fn build_response(res: ApiResult) -> HttpResponse {
     let body = match res {
         Ok(mut data) => {
-            jsonmerge(&mut data, &serde_json::json!({"error": "ok"}));
+            jsonmerge(&mut data, &json!({"error": "ok"}));
             data
         }
         Err(e) => {
-            serde_json::json!({"error": e.errmsg(), "type": format!("{e:?}")})
+            json!({"error": e.errmsg(), "type": format!("{e:?}")})
         }
     };
 
@@ -121,14 +123,14 @@ async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl web::Responder {
                 "event": ev,
             })
         })
-        .collect::<Vec<serde_json::Value>>();
+        .collect::<Vec<Value>>();
     build_response(Ok(json!({ "nb": res.len(), "events": res, })))
 }
 
 #[web::get("/player/new/{name}")]
 async fn new_player(srv: GameState, name: Path<String>) -> impl web::Responder {
     build_response(srv.new_player(&name).map(|(id, key)| {
-        serde_json::json!({
+        json!({
             "playerId": id,
             "key": key,
         })
@@ -152,7 +154,7 @@ async fn get_station_status(
     let player = get_player!(srv, req);
     let station = get_station!(srv, player, id.as_ref());
     let station = station.read().unwrap();
-    build_response(Ok(serde_json::json!({
+    build_response(Ok(json!({
         "id": station.id,
         "position": station.position,
         "crew": station.crew,
@@ -173,7 +175,7 @@ async fn list_shipyard_ships(
     let station = station.read().unwrap();
     let mut ships = vec![];
     for ship in station.shipyard.iter() {
-        ships.push(serde_json::json!({
+        ships.push(json!({
             "id": ship.id,
             "modules": ship.modules,
             "reactor_power": ship.reactor_power,
@@ -183,7 +185,7 @@ async fn list_shipyard_ships(
             "price": ship.compute_price(),
         }));
     }
-    build_response(Ok(serde_json::json!({ "ships": ships })))
+    build_response(Ok(json!({ "ships": ships })))
 }
 
 #[web::get("/station/{station_id}/shipyard/buy/{id}")]
@@ -200,7 +202,7 @@ async fn shipyard_buy_ship(
     build_response(
         player
             .buy_ship(&mut station, *ship_id)
-            .map(|v| serde_json::json!({ "shipId": v, })),
+            .map(|v| json!({ "shipId": v, })),
     )
 }
 
@@ -217,13 +219,13 @@ async fn shipyard_list_upgrades(
     for upgr in ShipUpgrade::iter() {
         res.insert(
             upgr,
-            serde_json::json!({
+            json!({
                 "price": station.get_ship_upgrade_price(&upgr),
                 "description": upgr.description(),
             }),
         );
     }
-    build_response(Ok(serde_json::to_value(res).unwrap()))
+    build_response(Ok(to_value(res).unwrap()))
 }
 
 #[web::get("/station/{station_id}/shipyard/upgrade/{ship_id}/{upgrade_type}")]
@@ -243,7 +245,7 @@ async fn shipyard_buy_upgrade(
     build_response(
         player
             .buy_ship_upgrade(&mut station, ship_id, &upgrade_type)
-            .map(|v| serde_json::json!({ "cost": v })),
+            .map(|v| json!({ "cost": v })),
     )
 }
 
@@ -288,14 +290,14 @@ async fn get_crew_upgrades(
     for (cid, cm) in ship.crew.0.iter() {
         res.insert(
             cid,
-            serde_json::json!({
+            json!({
                 "member-type": cm.member_type,
                 "rank": cm.rank + 1,
                 "price": cm.price_next_rank(),
             }),
         );
     }
-    build_response(Ok(serde_json::to_value(res).unwrap()))
+    build_response(Ok(to_value(res).unwrap()))
 }
 
 #[web::get("/station/{station_id}/crew/upgrade/ship/{ship_id}/{crew_id}")]
@@ -313,7 +315,7 @@ async fn buy_crew_upgrade(
     if res.is_ok() {
         player.update_wages(&srv.galaxy);
     }
-    build_response(res.map(|(p, r)| serde_json::json!({ "new-rank": r, "cost": p})))
+    build_response(res.map(|(p, r)| json!({ "new-rank": r, "cost": p})))
 }
 
 // TODO (#35)    Have an endpoint /station/{station_id}/crew/upgrade/{crew_id} instead
@@ -330,7 +332,7 @@ async fn upgrade_station_trader(
     if res.is_ok() {
         player.update_wages(&srv.galaxy);
     }
-    build_response(res.map(|(p, r)| serde_json::json!({ "new-rank": r, "cost": p })))
+    build_response(res.map(|(p, r)| json!({ "new-rank": r, "cost": p })))
 }
 
 #[web::get("/station/{station_id}/crew/assign/{crewid}/trading")]
@@ -346,7 +348,7 @@ async fn assign_trader(
     build_response(
         station
             .assign_trader(*crew_id)
-            .map(|_| serde_json::json!({})),
+            .map(|_| json!({})),
     )
 }
 
@@ -367,7 +369,7 @@ async fn assign_pilot(
     build_response(
         station
             .onboard_pilot(*crew_id, ship)
-            .map(|_| serde_json::json!({})),
+            .map(|_| json!({})),
     )
 }
 
@@ -388,7 +390,7 @@ async fn assign_operator(
     build_response(
         station
             .onboard_operator(*crew_id, ship, modid)
-            .map(|_| serde_json::json!({})),
+            .map(|_| json!({})),
     )
 }
 
@@ -397,7 +399,7 @@ async fn scan(id: Path<StationId>, srv: GameState, req: HttpRequest) -> impl web
     let player = get_player!(srv, req);
     let station = get_station!(srv, player, id.as_ref());
     let results = station.read().unwrap().scan(&srv.galaxy);
-    build_response(Ok(serde_json::to_value(&results).unwrap()))
+    build_response(Ok(to_value(&results).unwrap()))
 }
 
 #[web::get("/station/{station_id}/shop/modules")]
@@ -414,7 +416,7 @@ async fn get_prices_ship_module(
         let price = smod.get_price_buy();
         res.insert(smod, price);
     }
-    build_response(Ok(serde_json::to_value(res).unwrap()))
+    build_response(Ok(to_value(res).unwrap()))
 }
 
 #[web::get("/station/{station_id}/shop/modules/{ship_id}/buy/{modtype}")]
@@ -434,7 +436,7 @@ async fn buy_ship_module(
         player
             .buy_ship_module(station_id, ship_id, modtype)
             .map(|v| {
-                serde_json::json!({
+                json!({
                     "id": v,
                 })
             }),
@@ -462,13 +464,13 @@ async fn get_ship_module_upgrade_prices(
     for (id, smod) in ship.modules.iter() {
         res.insert(
             id,
-            serde_json::json!({
+            json!({
                 "module-type": smod.modtype,
                 "price": smod.price_next_rank(),
             }),
         );
     }
-    build_response(Ok(serde_json::to_value(res).unwrap()))
+    build_response(Ok(to_value(res).unwrap()))
 }
 
 #[web::get("/station/{station_id}/shop/modules/{ship_id}/upgrade/{modid}")]
@@ -486,7 +488,7 @@ async fn buy_ship_module_upgrade(
         player
             .buy_ship_module_upgrade(&station, ship_id, mod_id)
             .map(|(c, r)| {
-                serde_json::json!({
+                json!({
                     "new-rank": r,
                     "cost": c,
                 })
@@ -509,7 +511,7 @@ async fn buy_station_cargo(
     build_response(
         station
             .buy_cargo(player.deref_mut(), amnt)
-            .map(|v| serde_json::to_value(v).unwrap()),
+            .map(|v| to_value(v).unwrap()),
     )
 }
 
@@ -527,7 +529,7 @@ async fn get_station_upgrades(
         let cm = station.crew.0.get(&trader).unwrap();
         cm.price_next_rank()
     });
-    build_response(Ok(serde_json::json!({
+    build_response(Ok(json!({
         "cargo-expansion": cargoprice,
         "trader-upgrade": traderprice,
     })))
@@ -551,7 +553,7 @@ async fn refuel_ship(
     build_response(
         station
             .refuel_ship(ship)
-            .map(|v| serde_json::json!({"added-fuel": v})),
+            .map(|v| json!({"added-fuel": v})),
     )
 }
 
@@ -573,7 +575,7 @@ async fn repair_ship(
     build_response(
         station
             .repair_ship(ship)
-            .map(|v| serde_json::json!({"added-hull": v})),
+            .map(|v| json!({"added-hull": v})),
     )
 }
 
@@ -588,7 +590,7 @@ async fn get_ship_status(
     let Some(ship) = player.ships.get(id.as_ref()) else {
         return build_response(Err(Errcode::ShipNotFound(*id)));
     };
-    build_response(Ok(serde_json::to_value(ship).unwrap()))
+    build_response(Ok(to_value(ship).unwrap()))
 }
 
 #[web::get("/ship/{ship_id}/travelcost/{x}/{y}/{z}")]
@@ -605,11 +607,10 @@ async fn compute_travel_costs(
     };
     build_response(
         ship.compute_travel_costs((*x, *y, *z))
-            .map(|v| serde_json::to_value(v).unwrap()),
+            .map(|v| to_value(v).unwrap()),
     )
 }
 
-// TODO (#35)   Stop navigation
 #[web::get("/ship/{ship_id}/navigate/{x}/{y}/{z}")]
 async fn ask_navigate(
     srv: GameState,
@@ -623,7 +624,22 @@ async fn ask_navigate(
     let Some(ship) = player.ships.get_mut(id) else {
         return build_response(Err(Errcode::ShipNotFound(*id)));
     };
-    build_response(ship.set_travel(coord).map(|cost| serde_json::json!(cost)))
+    build_response(ship.set_travel(coord).map(|cost| json!(cost)))
+}
+
+#[web::get("/ship/{ship_id}/navigation/stop")]
+async fn stop_navigation(
+    srv: GameState,
+    args: Path<ShipId>,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let player = get_player!(srv, req);
+    let id = args.as_ref();
+    let mut player = player.write().unwrap();
+    let Some(ship) = player.ships.get_mut(id) else {
+        return build_response(Err(Errcode::ShipNotFound(*id)));
+    };
+    build_response(ship.stop_navigation().map(|pos| json!({"position": pos})))
 }
 
 #[web::get("/ship/{ship_id}/extraction/start")]
@@ -639,7 +655,7 @@ async fn start_extraction(
     };
     build_response(
         ship.start_extraction(&srv.galaxy)
-            .map(|v| serde_json::to_value(v).unwrap()),
+            .map(|v| to_value(v).unwrap()),
     )
 }
 
@@ -656,7 +672,7 @@ async fn stop_extraction(
     };
     build_response(
         ship.stop_extraction()
-            .map(|v| serde_json::to_value(v).unwrap()),
+            .map(|v| to_value(v).unwrap()),
     )
 }
 
@@ -697,13 +713,13 @@ async fn unload_ship_cargo(
             },
         );
     }
-    build_response(res.map(|v| serde_json::json!({ "unloaded": v })))
+    build_response(res.map(|v| json!({ "unloaded": v })))
 }
 
 #[web::get("/market/prices")]
 async fn get_market_prices(srv: GameState) -> impl web::Responder {
     let market = srv.market.read().unwrap();
-    build_response(Ok(serde_json::to_value(market.deref()).unwrap()))
+    build_response(Ok(to_value(market.deref()).unwrap()))
 }
 
 #[web::get("/market/{station_id}/buy/{resource}/{amnt}")]
@@ -724,7 +740,7 @@ async fn buy_resource(
     build_response(
         station
             .buy_resource(&resource, *amnt, player.deref_mut(), market.deref_mut())
-            .map(|tx| serde_json::to_value(tx).unwrap()),
+            .map(|tx| to_value(tx).unwrap()),
     )
 }
 
@@ -746,7 +762,7 @@ async fn sell_resource(
     build_response(
         station
             .sell_resource(&resource, *amnt, player.deref_mut(), market.deref_mut())
-            .map(|tx| serde_json::to_value(tx).unwrap()),
+            .map(|tx| to_value(tx).unwrap()),
     )
 }
 
@@ -764,12 +780,26 @@ async fn get_fee_rate(
     };
     let cm = station.crew.0.get(&trader).unwrap();
     let fee = fee_rate(cm.rank);
-    build_response(Ok(serde_json::json!({
+    build_response(Ok(json!({
         "fee_rate": fee,
     })))
 }
 
+#[cfg(feature = "testing")]
+#[web::get("/tick")]
+async fn tick_server(
+    srv: GameState,
+) -> impl web::Responder {
+    let Ok(_) = srv.send_sig.send(simeis_data::game::GameSignal::Tick) else {
+        return build_response(Err(Errcode::GameSignalSend));
+    };
+    build_response(Ok(json!({})))
+}
+
 pub fn configure(srv: &mut ServiceConfig) {
+    #[cfg(feature = "testing")]
+    srv.service(tick_server);
+
     srv.service(ping)
         .service(get_syslogs)
         .service(hire_crew)
@@ -783,6 +813,7 @@ pub fn configure(srv: &mut ServiceConfig) {
         .service(compute_travel_costs)
         .service(get_ship_status)
         .service(ask_navigate)
+        .service(stop_navigation)
         .service(shipyard_buy_ship)
         .service(list_shipyard_ships)
         .service(shipyard_buy_upgrade)

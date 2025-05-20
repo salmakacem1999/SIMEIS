@@ -1,9 +1,12 @@
 use base64::{prelude::BASE64_STANDARD, Engine};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+#[cfg(not(feature="testing"))]
+use std::sync::mpsc::TryRecvError;
 
 use rand::Rng;
 
@@ -14,10 +17,16 @@ use crate::player::{Player, PlayerId, PlayerKey};
 use crate::ship::ShipState;
 use crate::syslog::{SyslogEvent, SyslogFifo, SyslogRecv, SyslogSend};
 
-const ITER_PERIOD: Duration = Duration::from_millis(50);
+const ITER_PERIOD: Duration = Duration::from_millis(20);
 
 // TODO (#23) Have a global "inflation" rate for all users, that increases over time
 //     Equipment becomes more and more expansive
+
+pub enum GameSignal {
+    Stop,
+    Tick,
+}
+
 
 #[derive(Clone)]
 pub struct Game {
@@ -28,7 +37,7 @@ pub struct Game {
     pub syslog: SyslogSend,
     pub fifo_events: SyslogFifo,
     pub tstart: f64,
-    send_stop: Sender<bool>,
+    pub send_sig: Sender<GameSignal>,
 }
 
 impl Game {
@@ -40,7 +49,7 @@ impl Game {
             .unwrap()
             .as_secs_f64();
         let data = Game {
-            send_stop,
+            send_sig: send_stop,
             galaxy: Galaxy::init(),
             market: Arc::new(RwLock::new(Market::init())),
             players: Arc::new(RwLock::new(BTreeMap::new())),
@@ -49,30 +58,57 @@ impl Game {
             fifo_events: sysrecv.fifo.clone(),
             tstart,
         };
-        let thread_data = data.clone();
 
+        let thread_data = data.clone();
         let thread = std::thread::spawn(move || thread_data.start(recv_stop, sysrecv));
         (thread, data)
     }
 
-    pub fn start(&self, stop: Receiver<bool>, syslog: SyslogRecv) {
+    #[allow(unused_variables, unused_mut)]
+    pub fn start(&self, stop: Receiver<GameSignal>, syslog: SyslogRecv) {
         log::debug!("Started thread");
         let sleepmin_iter = ITER_PERIOD;
         let mut last_iter = Instant::now();
         let mut market_last_tick = Instant::now();
         let mut rng = rand::rng();
-        while stop.try_recv().is_err_and(|x| x == TryRecvError::Empty) {
-            self.threadloop(&mut rng, &mut market_last_tick, &syslog);
-            let took = Instant::now() - last_iter;
-            std::thread::sleep(sleepmin_iter.saturating_sub(took));
-            last_iter = Instant::now();
+
+        'main: loop {
+            #[cfg(feature = "testing")]
+            let got = stop.recv().ok();
+
+            #[cfg(not(feature = "testing"))]
+            let got = match stop.try_recv() {
+                Ok(res) => Some(res),
+                Err(TryRecvError::Empty) => Some(GameSignal::Tick),
+                Err(e) => {
+                    log::error!("Error while getting next tick / stop signal:  {e:?}");
+                    None
+                },
+            };
+
+            match got {
+                Some(GameSignal::Tick) => {
+                    self.threadloop(&mut rng, &mut market_last_tick, &syslog);
+
+                    #[cfg(not(feature = "testing"))]
+                    {
+                        let took = Instant::now() - last_iter;
+                        std::thread::sleep(sleepmin_iter.saturating_sub(took));
+                        last_iter = Instant::now();
+                    }
+                },
+
+                None | Some(GameSignal::Stop) => break 'main,
+            }
         }
         log::info!("Exiting game thread");
     }
 
     fn threadloop<R: Rng>(&self, rng: &mut R, mlt: &mut Instant, syslog: &SyslogRecv) {
         let market_change_proba = (mlt.elapsed().as_secs_f64() / MARKET_CHANGE_SEC).min(1.0);
+
         if rng.random_bool(market_change_proba) {
+            #[cfg(not(feature = "testing"))]
             self.market.write().unwrap().update_prices(rng);
             *mlt = Instant::now();
         }
@@ -117,7 +153,7 @@ impl Game {
 
     pub fn stop(self, handle: JoinHandle<()>) {
         log::info!("Asking game thread to exit");
-        self.send_stop.send(true).unwrap();
+        self.send_sig.send(GameSignal::Stop).unwrap();
         let _ = handle.join();
         log::info!("Game stopped");
     }
