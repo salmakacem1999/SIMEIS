@@ -1,15 +1,12 @@
-USERNAME="kevin"
-
 PORT=8080
 URL=f"http://0.0.0.0:{PORT}"
-global KEY
-KEY=None
 
 import os
 import sys
 import math
 import time
 import json
+import string
 import urllib.request
 
 class SimeisError(Exception):
@@ -25,16 +22,19 @@ def check_has(alld, key, *req):
     return all([k in alltypes for k in req])
 
 class Game:
-    def __init__(self):
-        self.player = None
+    def __init__(self, username):
+        # Init connection & setup player
+        assert self.get("/ping")["ping"] == "pong"
+        print("[*] Connection to server OK")
+        self.setup_player(username)
 
         # Useful for our game loops
+        self.pid = self.player["playerId"] # ID of our player
         self.sid = None    # ID of our ship
         self.sta = None    # ID of our station
-        self.pid = None    # ID of our player
 
     def get(self, path, **qry):
-        if self.player is not None:
+        if hasattr(self, "player"):
             qry["key"] = self.player["key"]
 
         tail = ""
@@ -63,17 +63,18 @@ class Game:
     # If we have a file containing the player ID and key, use it
     # If not, let's create a new player
     # If the player has lost, print an error message
-    def setup_player(self):
-        if not os.path.isfile("./simeis.json"):
-            player = self.get(f"/player/new/{USERNAME}")
+    def setup_player(self, username):
+        username = "".join([c for c in username if c in string.ascii_letters + string.digits]).lower()
+        if not os.path.isfile(f"./{username}.json"):
+            player = self.get(f"/player/new/{username}")
             with open("./simeis.json", "w") as f:
                 json.dump(player, f, indent=2)       
-            print(f"[*] Created player {USERNAME}")
+            print(f"[*] Created player {username}")
             self.player = player
         else:
             with open("./simeis.json", "r") as f:
                 self.player = json.load(f)
-            print(f"[*] Loaded data for player {USERNAME}")
+            print(f"[*] Loaded data for player {username}")
 
         player = self.get("/player/{}".format(self.player["playerId"]))
         if player["money"] <= 0.0:
@@ -157,12 +158,6 @@ class Game:
     #         - Buy a mining module to be able to farm
     #         - Hire an operator & assign it on the mining module of our ship
     def init_game(self):
-        # Init connection & setup player
-        assert self.get("/ping")["ping"] == "pong"
-        print("[*] Connection to server OK")
-        self.setup_player()
-        self.pid = self.player["playerId"]
-
         # Ensure we own a ship, buy one if we don't
         status = self.get(f"/player/{self.pid}")
         self.sta = list(status["stations"].keys())[0]
@@ -255,12 +250,12 @@ class Game:
         self.ship_refuel(self.sid)
 
 if __name__ == "__main__":
-    game = Game()
+    game = Game("kevin50")
     game.init_game()
 
     while True:
+        print("")
         game.disp_status()
         game.go_mine()
         game.disp_status()
         game.go_sell()
-        print("")

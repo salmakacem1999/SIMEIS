@@ -796,6 +796,10 @@ async fn tick_server(
     build_response(Ok(json!({})))
 }
 
+// TODO IMPORTANT    Stats of all the players in the game
+//     Total money earned
+//     Age of the player
+
 pub fn configure(srv: &mut ServiceConfig) {
     #[cfg(feature = "testing")]
     srv.service(tick_server);
