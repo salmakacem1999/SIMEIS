@@ -14,6 +14,7 @@ HIST = {}
 class SimeisError(Exception):
     pass
 
+NMAX=30
 WIDTH=100
 SCORE="█"
 POTENTIAL="▒"
@@ -34,7 +35,7 @@ def get(path):
     qry = f"{URL}/{path}"
     while True:
         try:
-            reply = urllib.request.urlopen(qry, timeout=1)
+            reply = urllib.request.urlopen(qry, timeout=5)
             break
         except:
             os.system("clear")
@@ -82,8 +83,8 @@ while True:
         if p["lost"]:
             p["score"] = -1.0
 
-    players = sorted(info.items(), key=lambda p: p[1]["score"] + p[1]["potential"], reverse=True)
-    max_score = max([v["score"] + v["potential"] for v in info.values()])
+    players = sorted(info.items(), key=lambda p: p[1]["score"] + p[1]["potential"], reverse=True)[:NMAX]
+    max_score = max([max(v["score"], 0) + v["potential"] for v in info.values()])
     for (player, data) in players:
         if player not in HIST:
             HIST[player] = []

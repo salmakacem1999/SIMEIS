@@ -570,6 +570,7 @@ async fn refuel_ship(
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
 ) -> impl web::Responder {
+    log::warn!("Refuel started");
     let (station_id, ship_id) = args.as_ref();
     let player = get_player!(srv, req);
     let station = get_station!(srv, player, station_id);
@@ -579,11 +580,9 @@ async fn refuel_ship(
         return build_response(Err(Errcode::ShipNotFound(*ship_id)));
     };
 
-    build_response(
-        station
-            .refuel_ship(ship)
-            .map(|v| json!({"added-fuel": v})),
-    )
+    let res = station.refuel_ship(ship).map(|v| json!({"added-fuel": v}));
+    log::warn!("Refuel finished");
+    build_response(res)
 }
 
 #[web::get("/station/{station_id}/repair/{ship_id}")]
@@ -592,6 +591,7 @@ async fn repair_ship(
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
 ) -> impl web::Responder {
+    log::warn!("Repair started");
     let (station_id, ship_id) = args.as_ref();
     let player = get_player!(srv, req);
     let station = get_station!(srv, player, station_id);
@@ -601,11 +601,11 @@ async fn repair_ship(
         return build_response(Err(Errcode::ShipNotFound(*ship_id)));
     };
 
-    build_response(
-        station
+    let res = station
             .repair_ship(ship)
-            .map(|v| json!({"added-hull": v})),
-    )
+            .map(|v| json!({"added-hull": v}));
+    log::warn!("Repair finished");
+    build_response(res)
 }
 
 #[web::get("/ship/{ship_id}")]
@@ -779,6 +779,7 @@ async fn sell_resource(
     args: Path<(StationId, String, f64)>,
     req: HttpRequest,
 ) -> impl web::Responder {
+    log::warn!("New sell operation");
     let (station_id, resource, amnt) = args.as_ref();
     let Ok(resource) = Resource::from_str(resource) else {
         return build_response(Err(Errcode::InvalidArgument("resource")));
@@ -788,11 +789,11 @@ async fn sell_resource(
     let mut player = player.write().await;
     let mut station = station.write().await;
     let mut market = srv.market.write().await;
-    build_response(
-        station
+    let res = station
             .sell_resource(&resource, *amnt, player.deref_mut(), market.deref_mut())
-            .map(|tx| to_value(tx).unwrap()),
-    )
+            .map(|tx| to_value(tx).unwrap());
+    log::warn!("Sell operation OK");
+    build_response(res)
 }
 
 #[web::get("/market/{station_id}/fee_rate")]

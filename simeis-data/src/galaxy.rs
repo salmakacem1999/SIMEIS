@@ -1,5 +1,5 @@
 use rand::rngs::ThreadRng;
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 use scan::ScanResult;
 use station::StationId;
 use std::collections::BTreeMap;
@@ -149,7 +149,7 @@ impl Galaxy {
         let mut retry_n = 0;
         loop {
             coord = get_rand_coord_near(&pla.position, STATION_FPLANET_DIST, &mut rng);
-            while galaxy.get(&coord).is_some() {
+            while !is_in_sector(&coord, &sector) || galaxy.get(&coord).is_some() {
                 coord = get_rand_coord_near(&pla.position, STATION_FPLANET_DIST, &mut rng);
             }
 
@@ -168,7 +168,7 @@ impl Galaxy {
             }
 
             let mindist = mindist.unwrap();
-            if (mindist - STATION_FPLANET_DIST).abs() < 1.0 {
+            if (mindist < STATION_FPLANET_DIST) && (mindist - STATION_FPLANET_DIST).abs() < 1.0 {
                 break;
             }
             retry_n += 1;
@@ -176,17 +176,9 @@ impl Galaxy {
                 panic!("Too many retries");
             }
         }
-        log::debug!("Station {coord:?} with distance {} to planet {:?}", get_distance(&coord, &pla.position), pla.position);
         let station = Arc::new(RwLock::new(station::Station::init(id, coord)));
         galaxy.insert(&coord, SpaceObject::BaseStation(station)).unwrap();
         drop(galaxy);
-        let scanned = self.scan_sector(1, &coord).await;
-        assert_ne!(scanned.planets.len(), 0);
-        if scanned.planets.is_empty() {
-            log::error!("NO PLANETS AROUND STATION");
-        } else {
-            log::info!("{} planets around", scanned.planets.len());
-        }
         return (id, coord);
     }
 
@@ -216,16 +208,6 @@ impl Galaxy {
             for obj in self.0.read().await.list_objects_in_sector(&sector) {
                 results.add(rank, obj).await;
             }
-        }
-
-        // TODO FIXME
-        log::debug!("Scan strenght: {strengh:?}");
-        if results.planets.len() == 0 {
-            for sector in sectors_around(center, strengh) {
-                log::debug!("Sector {sector:?}");
-                log::debug!("{:?}", self.0.read().await.list_objects_in_sector(&sector));
-            }
-            panic!("NO PLANETS");
         }
         debug_assert!(results.planets.len() > 0);    // We should always have some planets
         results
@@ -271,6 +253,12 @@ pub fn translation(start: SpaceCoord, direction: (f64, f64, f64), dist: f64) -> 
         ((start.1 as f64) + (dist * direction.1)) as SpaceUnit,
         ((start.2 as f64) + (dist * direction.2)) as SpaceUnit,
     )
+}
+
+fn is_in_sector(coord: &SpaceCoord, sector: &GalaxySector) -> bool {
+    coord.0 >= sector.0.0 && coord.0 < sector.0.1
+    && coord.1 >= sector.1.0 && coord.1 < sector.1.1
+    && coord.2 >= sector.2.0 && coord.2 < sector.2.1
 }
 
 // TODO (#27)    Make this scan use a sphere from the center point
@@ -323,4 +311,23 @@ fn get_rand_coord_near(obj: &SpaceCoord, dist: f64, rng: &mut ThreadRng) -> Spac
     let y = obj.1 + (angle_xy.sin() * dist) as u32;
     let z = obj.2;
     (x, y, z)
+}
+
+#[test]
+fn test_compute_sector() {
+    let mut rng = rand::rngs::SmallRng::from_os_rng();
+    for _ in 0..10000000 {
+        let x = rng.random();
+        let y = rng.random();
+        let z = rng.random();
+        let sec = compute_sector(x, y, z);
+        assert!(is_in_sector(&(x, y, z), &sec));
+    }
+    assert_eq!(compute_sector(SECTOR_SIZE.0-1, 0, 0), ((0, SECTOR_SIZE.0), (0, SECTOR_SIZE.1), (0, SECTOR_SIZE.2)));
+    assert_eq!(compute_sector(0, SECTOR_SIZE.1-1, 0), ((0, SECTOR_SIZE.0), (0, SECTOR_SIZE.1), (0, SECTOR_SIZE.2)));
+    assert_eq!(compute_sector(0, 0, SECTOR_SIZE.2-1), ((0, SECTOR_SIZE.0), (0, SECTOR_SIZE.1), (0, SECTOR_SIZE.2)));
+
+    assert_eq!(compute_sector(SECTOR_SIZE.0, 0, 0), ((SECTOR_SIZE.0, 2*SECTOR_SIZE.0), (0, SECTOR_SIZE.1), (0, SECTOR_SIZE.2)));
+    assert_eq!(compute_sector(0, SECTOR_SIZE.1, 0), ((0, SECTOR_SIZE.0), (SECTOR_SIZE.1, 2*SECTOR_SIZE.1), (0, SECTOR_SIZE.2)));
+    assert_eq!(compute_sector(0, 0, SECTOR_SIZE.2), ((0, SECTOR_SIZE.0), (0, SECTOR_SIZE.1), (SECTOR_SIZE.2, 2*SECTOR_SIZE.2)));
 }

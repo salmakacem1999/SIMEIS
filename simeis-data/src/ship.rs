@@ -160,7 +160,7 @@ impl Ship {
     // Updates the performances of the ship based on the crew onboard
     pub fn update_perf_stats(&mut self) {
         self.stats = ShipStats::default();
-        self.stats.hull_usage_rate = HULL_USAGE_BASE;
+        self.stats.hull_usage_rate = HULL_USAGE_BASE / (1.0 + (1.0 + self.shield_power as f64).log(3.5));
         self.stats.fuel_consumption = self.reactor_power as f64;
 
         if let Some(ref pilot) = self.pilot {

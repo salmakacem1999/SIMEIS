@@ -40,18 +40,12 @@ impl Planet {
 
     // TODO (#34) Make this depend on the conditions, temperature, etc...
     pub fn resource_density(&self, resource: &Resource) -> f64 {
-        if self.solid {
-            match resource {
-                Resource::Stone => 3.0,
-                Resource::Iron => 1.0,
-                _ => 0.0,
-            }
+        if self.solid && resource.mineable(u8::MAX) {
+            6.25
+        } else if !self.solid && resource.suckable(u8::MAX) {
+            6.25
         } else {
-            match resource {
-                Resource::Helium => 3.0,
-                Resource::Ozone => 1.0,
-                _ => 0.0,
-            }
+            0.0
         }
     }
 }

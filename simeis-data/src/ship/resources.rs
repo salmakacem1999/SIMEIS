@@ -88,9 +88,9 @@ impl Resource {
     pub fn min_rank(&self) -> u8 {
         match self {
             Resource::Stone | Resource::Helium => 0,
-            Resource::Iron | Resource::Ozone => 3,
-            Resource::Copper | Resource::Freon => 6,
-            Resource::Gold | Resource::Oxygen => 10,
+            Resource::Iron | Resource::Ozone => 2,
+            Resource::Copper | Resource::Freon => 5,
+            Resource::Gold | Resource::Oxygen => 9,
             Resource::Fuel | Resource::HullPlate => 0,
         }
     }
@@ -100,7 +100,7 @@ impl Resource {
             Resource::Stone
             | Resource::Iron
             | Resource::Copper
-            | Resource::Gold => rank >= self.min_rank(),
+            | Resource::Gold => rank > self.min_rank(),
             _ => false,
         }
     }
@@ -110,7 +110,7 @@ impl Resource {
             Resource::Helium
             | Resource::Ozone
             | Resource::Freon
-            | Resource::Oxygen => rank >= self.min_rank(),
+            | Resource::Oxygen => rank > self.min_rank(),
             _ => false,
         }
     }

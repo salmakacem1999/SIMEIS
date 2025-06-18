@@ -7,6 +7,8 @@ use crate::galaxy::planet::Planet;
 
 const MOD_UPG_POWF_DIV: f64 = 75.0;
 const EXTRACTION_RATE_RANK_POWF: f64 = 0.45;
+const EXRATE_DIFF_FACT: f64 = 2.5;
+const EXRATE_FACT: f64 = 0.6;
 
 pub type ShipModuleId = u16;
 
@@ -95,8 +97,8 @@ impl ShipModule {
     }
 
     pub fn extraction_rate(&self, resource: &Resource, oprank: u8, density: f64) -> f64 {
-        let pow = (self.rank as f64).powf(EXTRACTION_RATE_RANK_POWF);
-        let d = resource.extraction_difficulty();
-        (density / (d / (oprank as f64))).powf(pow)
+        let rank = ((oprank - resource.min_rank()) as f64) * (self.rank as f64);
+        let difficulty = resource.extraction_difficulty().powf(EXRATE_DIFF_FACT);
+        density * (rank / difficulty).powf(EXRATE_FACT)
     }
 }
