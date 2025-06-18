@@ -57,7 +57,6 @@ pub struct ShipModule {
 
 impl ShipModule {
     #[inline]
-    // TODO IMPORTANT    Remake this function so that the prices are more sensible
     pub fn price_next_rank(&self) -> f64 {
         let num = MOD_UPG_POWF_DIV - 1.0 + (self.rank as f64);
         self.modtype.get_price_buy().powf(num / MOD_UPG_POWF_DIV)

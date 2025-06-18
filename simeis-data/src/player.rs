@@ -69,11 +69,11 @@ impl Player {
     }
 
     // SAFETY NOTE Only use this function when a &mut Station is NOT present, or deadlock
-    pub fn update_wages(&mut self, galaxy: &Galaxy) {
+    pub async fn update_wages(&mut self, galaxy: &Galaxy) {
         self.costs = 0.0;
         for coord in self.stations.values() {
-            let station = galaxy.get_station(coord).unwrap();
-            let station = station.read().unwrap();
+            let station = galaxy.get_station(coord).await.unwrap();
+            let station = station.read().await;
             self.costs += station.crew.sum_wages();
             self.costs += station.idle_crew.sum_wages();
         }
@@ -84,17 +84,17 @@ impl Player {
             .sum::<f64>();
     }
 
-    pub fn update_money(&mut self, syslog: &SyslogRecv, tdelta: f64) {
+    pub async fn update_money(&mut self, syslog: &SyslogRecv, tdelta: f64) {
         let before = self.money < (self.costs * 60.0);
         self.money -= self.costs * tdelta;
         let after = self.money < (self.costs * 60.0);
         if after && !before {
             let tleft = std::time::Duration::from_secs_f64(self.money / self.costs);
-            syslog.event(self.id, SyslogEvent::LowFunds(tleft));
+            syslog.event(self.id, SyslogEvent::LowFunds(tleft)).await;
         }
         if self.money < 0.0 && !self.lost {
             self.lost = true;
-            syslog.event(self.id, SyslogEvent::GameLost);
+            syslog.event(self.id, SyslogEvent::GameLost).await;
             // TODO (#19)  Allow to create a new game with the same name if old one lost
             // TODO (#19)  What to do with its resources, ships, etc...
         }

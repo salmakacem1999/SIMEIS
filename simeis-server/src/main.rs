@@ -3,13 +3,13 @@ use ntex::web;
 use simeis_data::game::Game;
 
 mod api;
-mod crew;
-mod player;
 
 pub type GameState = ntex::web::types::State<Game>;
 
 #[ntex::main]
 async fn main() -> std::io::Result<()> {
+    console_subscriber::init();
+
     #[cfg(not(feature = "testing"))]
     let port = 8080;
 
@@ -23,6 +23,7 @@ async fn main() -> std::io::Result<()> {
         .filter_module("ntex_rt", log::LevelFilter::Warn)
         .filter_module("ntex::http::h1", log::LevelFilter::Warn)
         .init();
+
     log::info!("Running on http://127.0.0.1:{port}");
     let (gamethread, state) = Game::init();
     let game = state.clone();
@@ -39,6 +40,6 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await;
 
-    game.stop(gamethread);
+    game.stop(gamethread).await;
     res
 }

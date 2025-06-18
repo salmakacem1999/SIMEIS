@@ -45,7 +45,7 @@ class Game:
             ])
 
         qry = f"{URL}{path}{tail}"
-        reply = urllib.request.urlopen(qry)
+        reply = urllib.request.urlopen(qry, timeout=1)
 
         data = json.loads(reply.read().decode())
         err = data.pop("error")
@@ -155,10 +155,12 @@ class Game:
             need = req - station["resources"]["HullPlate"]
             bought = self.get(f"/market/{self.sta}/buy/hullplate/{need}")
             print(f"[*] Bought {need} of hull plates for", bought["removed_money"])
+            station = self.get(f"/station/{self.sta}")["cargo"]
 
-        # Use the plates in stock to repair the ship
-        repair = self.get(f"/station/{self.sta}/repair/{self.sid}")
-        print("[*] Repaired {} hull plates on the ship".format(repair["added-hull"]))
+        if station["resources"]["HullPlate"] > 0:
+            # Use the plates in stock to repair the ship
+            repair = self.get(f"/station/{self.sta}/repair/{self.sid}")
+            print("[*] Repaired {} hull plates on the ship".format(repair["added-hull"]))
 
     # Refuel the ship:    Buy the fuel, then ask for a refill
     def ship_refuel(self, sid):
@@ -177,13 +179,15 @@ class Game:
             need = req - station["resources"]["Fuel"]
             bought = self.get(f"/market/{self.sta}/buy/Fuel/{need}")
             print(f"[*] Bought {need} of fuel for", bought["removed_money"])
+            station = self.get(f"/station/{self.sta}")["cargo"]
 
-        # Use the fuel in stock to refill the ship
-        refuel = self.get(f"/station/{self.sta}/refuel/{self.sid}")
-        print("[*] Refilled {} fuel on the ship for {} credits".format(
-            refuel["added-fuel"],
-            bought["removed_money"],
-        ))
+        if station["resources"]["Fuel"] > 0:
+            # Use the fuel in stock to refill the ship
+            refuel = self.get(f"/station/{self.sta}/refuel/{self.sid}")
+            print("[*] Refilled {} fuel on the ship for {} credits".format(
+                refuel["added-fuel"],
+                bought["removed_money"],
+            ))
 
     # Initializes the game:
     #     - Ensure our player exists

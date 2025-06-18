@@ -1,14 +1,15 @@
 use base64::{prelude::BASE64_STANDARD, Engine};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, RwLock};
-use std::thread::JoinHandle;
+use tokio::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 use std::time::{Duration, Instant};
 
 #[cfg(not(feature="testing"))]
-use std::sync::mpsc::TryRecvError;
+use tokio::sync::mpsc::error::TryRecvError;
 
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 
 use crate::errors::Errcode;
 use crate::galaxy::Galaxy;
@@ -42,7 +43,7 @@ pub struct Game {
 
 impl Game {
     pub fn init() -> (JoinHandle<()>, Game) {
-        let (send_stop, recv_stop) = std::sync::mpsc::channel();
+        let (send_stop, recv_stop) = tokio::sync::mpsc::channel(5);
         let (syssend, sysrecv) = SyslogSend::channel();
         let tstart = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -60,21 +61,23 @@ impl Game {
         };
 
         let thread_data = data.clone();
-        let thread = std::thread::spawn(move || thread_data.start(recv_stop, sysrecv));
+        let thread = tokio::spawn(async move {
+            thread_data.start(recv_stop, sysrecv).await
+        });
         (thread, data)
     }
 
     #[allow(unused_variables, unused_mut)]
-    pub fn start(&self, stop: Receiver<GameSignal>, syslog: SyslogRecv) {
+    pub async fn start(&self, mut stop: Receiver<GameSignal>, syslog: SyslogRecv) {
         log::debug!("Started thread");
         let sleepmin_iter = ITER_PERIOD;
         let mut last_iter = Instant::now();
         let mut market_last_tick = Instant::now();
-        let mut rng = rand::rng();
+        let mut rng = rand::rngs::SmallRng::from_os_rng();
 
         'main: loop {
             #[cfg(feature = "testing")]
-            let got = stop.recv().ok();
+            let got = stop.recv().await;
 
             #[cfg(not(feature = "testing"))]
             let got = match stop.try_recv() {
@@ -88,7 +91,7 @@ impl Game {
 
             match got {
                 Some(GameSignal::Tick) => {
-                    self.threadloop(&mut rng, &mut market_last_tick, &syslog);
+                    self.threadloop(&mut rng, &mut market_last_tick, &syslog).await;
 
                     #[cfg(not(feature = "testing"))]
                     {
@@ -104,18 +107,19 @@ impl Game {
         log::info!("Exiting game thread");
     }
 
-    fn threadloop<R: Rng>(&self, rng: &mut R, mlt: &mut Instant, syslog: &SyslogRecv) {
+    async fn threadloop<R: Rng>(&self, rng: &mut R, mlt: &mut Instant, syslog: &SyslogRecv) {
         let market_change_proba = (mlt.elapsed().as_secs_f64() / MARKET_CHANGE_SEC).min(1.0);
 
         if rng.random_bool(market_change_proba) {
             #[cfg(not(feature = "testing"))]
-            self.market.write().unwrap().update_prices(rng);
+            self.market.write().await.update_prices(rng);
             *mlt = Instant::now();
         }
 
-        for (player_id, player) in self.players.read().unwrap().iter() {
-            let mut player = player.write().unwrap();
-            player.update_money(syslog, ITER_PERIOD.as_secs_f64());
+        let all_players = self.players.read().await.clone();
+        for (player_id, player) in all_players {
+            let mut player = player.write().await;
+            player.update_money(syslog, ITER_PERIOD.as_secs_f64()).await;
 
             let mut deadship = vec![];
             for (id, ship) in player.ships.iter_mut() {
@@ -127,7 +131,7 @@ impl Game {
                             if ship.hull_decay >= ship.hull_decay_capacity {
                                 deadship.push(*id);
                             } else {
-                                syslog.event(*player_id, SyslogEvent::ShipFlightFinished(*id));
+                                syslog.event(player_id, SyslogEvent::ShipFlightFinished(*id)).await;
                             }
                         }
                     }
@@ -136,49 +140,49 @@ impl Game {
                         let finished = ship.update_extract(ITER_PERIOD.as_secs_f64());
                         if finished {
                             ship.state = ShipState::Idle;
-                            syslog.event(*player_id, SyslogEvent::ExtractionStopped(*id));
+                            syslog.event(player_id, SyslogEvent::ExtractionStopped(*id)).await;
                         }
                     }
                     _ => {}
                 }
             }
             for id in deadship {
-                syslog.event(*player_id, SyslogEvent::ShipDestroyed(id));
+                syslog.event(player_id, SyslogEvent::ShipDestroyed(id)).await;
                 player.ships.remove(&id);
             }
         }
 
-        syslog.update();
+        syslog.update().await;
     }
 
-    pub fn stop(self, handle: JoinHandle<()>) {
+    pub async fn stop(self, handle: JoinHandle<()>) {
         log::info!("Asking game thread to exit");
-        self.send_sig.send(GameSignal::Stop).unwrap();
-        let _ = handle.join();
+        self.send_sig.send(GameSignal::Stop).await.unwrap();
+        let _ = handle.await;
         log::info!("Game stopped");
     }
 
-    pub fn new_player<T: ToString>(&self, name: T) -> Result<(PlayerId, String), Errcode> {
+    pub async fn new_player<T: ToString>(&self, name: T) -> Result<(PlayerId, String), Errcode> {
         let name = name.to_string();
-        for (pid, player) in self.players.read().unwrap().iter() {
-            if name == player.read().unwrap().name {
+        for (pid, player) in self.players.read().await.iter() {
+            if name == player.read().await.name {
                 return Err(Errcode::PlayerAlreadyExists(*pid, name));
             }
         }
 
-        let station = self.galaxy.init_new_station();
+        let station = self.galaxy.init_new_station().await;
         let player = Player::new(station, name);
         let pid = player.id;
         let key = BASE64_STANDARD.encode(player.key);
         self.player_index
             .write()
-            .unwrap()
+            .await
             .insert(player.key, player.id);
         self.players
             .write()
-            .unwrap()
+            .await
             .insert(player.id, Arc::new(RwLock::new(player)));
-        self.syslog.event(&pid, SyslogEvent::GameStarted);
+        self.syslog.event(&pid, SyslogEvent::GameStarted).await;
         Ok((pid, key))
     }
 }

@@ -100,7 +100,7 @@ impl Resource {
             Resource::Stone
             | Resource::Iron
             | Resource::Copper
-            | Resource::Gold => rank > self.min_rank(),
+            | Resource::Gold => rank >= self.min_rank(),
             _ => false,
         }
     }
@@ -110,7 +110,7 @@ impl Resource {
             Resource::Helium
             | Resource::Ozone
             | Resource::Freon
-            | Resource::Oxygen => rank > self.min_rank(),
+            | Resource::Oxygen => rank >= self.min_rank(),
             _ => false,
         }
     }

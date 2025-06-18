@@ -3,7 +3,8 @@ use rand::Rng;
 use scan::ScanResult;
 use station::StationId;
 use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub type SpaceUnit = u32;
 pub type SpaceCoord = (SpaceUnit, SpaceUnit, SpaceUnit);
@@ -124,10 +125,10 @@ impl Galaxy {
     }
 
     // TODO (#11) Generate based on the galaxy
-    pub fn init_new_station(&self) -> (StationId, SpaceCoord) {
+    pub async fn init_new_station(&self) -> (StationId, SpaceCoord) {
         let mut rng = rand::rng();
 
-        let mut galaxy = self.0.write().unwrap();
+        let mut galaxy = self.0.write().await;
         let mut seccoord = (rng.random(), rng.random(), rng.random());
         while galaxy.is_discovered(&seccoord) {
             seccoord = (rng.random(), rng.random(), rng.random());
@@ -179,7 +180,7 @@ impl Galaxy {
         let station = Arc::new(RwLock::new(station::Station::init(id, coord)));
         galaxy.insert(&coord, SpaceObject::BaseStation(station)).unwrap();
         drop(galaxy);
-        let scanned = self.scan_sector(1, &coord);
+        let scanned = self.scan_sector(1, &coord).await;
         assert_ne!(scanned.planets.len(), 0);
         if scanned.planets.is_empty() {
             log::error!("NO PLANETS AROUND STATION");
@@ -189,8 +190,8 @@ impl Galaxy {
         return (id, coord);
     }
 
-    pub fn get_station(&self, coord: &SpaceCoord) -> Option<Arc<RwLock<station::Station>>> {
-        let galaxy = self.0.read().unwrap();
+    pub async fn get_station(&self, coord: &SpaceCoord) -> Option<Arc<RwLock<station::Station>>> {
+        let galaxy = self.0.read().await;
         let obj = galaxy.get(coord)?;
         let SpaceObject::BaseStation(station) = obj else {
             return None;
@@ -198,8 +199,8 @@ impl Galaxy {
         Some(station.clone())
     }
 
-    pub fn get_planet(&self, coord: &SpaceCoord) -> Option<Arc<planet::Planet>> {
-        let galaxy = self.0.read().unwrap();
+    pub async fn get_planet(&self, coord: &SpaceCoord) -> Option<Arc<planet::Planet>> {
+        let galaxy = self.0.read().await;
         let obj = galaxy.get(coord)?;
         let SpaceObject::Planet(planet) = obj else {
             return None;
@@ -207,13 +208,13 @@ impl Galaxy {
         Some(planet.clone())
     }
 
-    pub fn scan_sector(&self, rank: u8, center: &SpaceCoord) -> ScanResult {
+    pub async fn scan_sector(&self, rank: u8, center: &SpaceCoord) -> ScanResult {
         let strengh = (rank - 1) as f64;
         let mut results = ScanResult::empty();
         debug_assert!(strengh >= 0.0);
         for sector in sectors_around(center, strengh) {
-            for obj in self.0.read().unwrap().list_objects_in_sector(&sector) {
-                results.add(rank, obj);
+            for obj in self.0.read().await.list_objects_in_sector(&sector) {
+                results.add(rank, obj).await;
             }
         }
 
@@ -222,7 +223,7 @@ impl Galaxy {
         if results.planets.len() == 0 {
             for sector in sectors_around(center, strengh) {
                 log::debug!("Sector {sector:?}");
-                log::debug!("{:?}", self.0.read().unwrap().list_objects_in_sector(&sector));
+                log::debug!("{:?}", self.0.read().await.list_objects_in_sector(&sector));
             }
             panic!("NO PLANETS");
         }

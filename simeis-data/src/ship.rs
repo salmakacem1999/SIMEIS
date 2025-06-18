@@ -27,6 +27,7 @@ const FUEL_TANK_CAP_PRICE: f64 = 30.0;
 const CARGO_CAP_PRICE: f64 = 20.0;
 const HULL_DECAY_CAP_PRICE: f64 = 9.0;
 const REACTOR_POWER_PRICE: f64 = 4000.0;
+const SHIELD_PRICE : f64 = 2500.0;
 
 const REACTOR_SPEED_PER_POWER: f64 = 50.0;
 
@@ -47,6 +48,7 @@ pub struct Ship {
     pub fuel_tank_capacity: f64,
     pub hull_decay_capacity: f64,
     pub modules: BTreeMap<ShipModuleId, ShipModule>,
+    pub shield_power: u16,
 
     #[serde(default)]
     pub position: SpaceCoord,
@@ -98,6 +100,7 @@ impl Ship {
             fuel_tank_capacity: 1000.0,
             cargo: ShipCargo::with_capacity(200.0),
             hull_decay_capacity: 3000.0,
+            shield_power: 0,
             ..Default::default()
         }
     }
@@ -110,6 +113,7 @@ impl Ship {
             fuel_tank_capacity: 2000.0,
             cargo: ShipCargo::with_capacity(400.0),
             hull_decay_capacity: 6000.0,
+            shield_power: 1,
             ..Default::default()
         }
     }
@@ -122,6 +126,7 @@ impl Ship {
             fuel_tank_capacity: 4000.0,
             cargo: ShipCargo::with_capacity(1200.0),
             hull_decay_capacity: 20000.0,
+            shield_power: 3,
             ..Default::default()
         }
     }
@@ -241,11 +246,11 @@ impl Ship {
         return Ok(self.position)
     }
 
-    pub fn start_extraction(&mut self, galaxy: &Galaxy) -> Result<ExtractionInfo, Errcode> {
+    pub async fn start_extraction(&mut self, galaxy: &Galaxy) -> Result<ExtractionInfo, Errcode> {
         let ShipState::Idle = self.state else {
             return Err(Errcode::ShipNotIdle);
         };
-        let Some(planet) = galaxy.get_planet(&self.position) else {
+        let Some(planet) = galaxy.get_planet(&self.position).await else {
             return Err(Errcode::CannotExtractWithoutPlanet);
         };
         log::debug!(

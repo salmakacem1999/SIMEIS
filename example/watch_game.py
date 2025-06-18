@@ -18,20 +18,23 @@ WIDTH=100
 SCORE="█"
 POTENTIAL="▒"
 VOID=" "
-def mkbar(n, maxs, width=50, mins=0, block="#"):
-        if maxs == 0.0:
-            perc = 0
-        else:
-            perc = n / maxs
-        nblock = int(width * perc)
-        nvoid = width - nblock
-        return block * nblock + VOID * nvoid
+def mkbar(score, pot, maxs):
+    if maxs == 0.0:
+        ps = 0
+        pp = 0
+    else:
+        ps = score / maxs
+        pp = pot / maxs
+    nbs = int(WIDTH * ps)
+    nbp = int(WIDTH * pp)
+    nvoid = WIDTH - nbs - nbp
+    return (SCORE * nbs) + (POTENTIAL * nbp) + (VOID * nvoid)
 
 def get(path):
     qry = f"{URL}/{path}"
     while True:
         try:
-            reply = urllib.request.urlopen(qry)
+            reply = urllib.request.urlopen(qry, timeout=1)
             break
         except:
             os.system("clear")
@@ -72,8 +75,6 @@ while True:
 
     info = get_info()
     if len(info) == 0:
-        os.system("clear")
-        HIST = {}
         print("No players on the server")
         continue
 
@@ -91,7 +92,7 @@ while True:
             print("Player {}:\tLOST".format(data["name"]))
             continue
 
-        s = data["score"] + data["potential"]
+        s = max(0, data["score"]) + data["potential"]
         if data["age"] == 0:
             avg = 0.0
         else:
@@ -99,11 +100,7 @@ while True:
         HIST[player].append((s, avg))
         avg_lasts = max([n[1] for n in HIST[player][-30:]])
 
-        score_bar = mkbar(data["score"], max_score, block=SCORE, width=WIDTH).strip(VOID)
-        pot_bar = mkbar(data["potential"], max_score, block=POTENTIAL, width=WIDTH).strip(VOID)
-        bar = score_bar + pot_bar
-        nvoid = WIDTH - len(bar)
-        bar += VOID * nvoid
+        bar = mkbar(data["score"], data["potential"], max_score)
         print("Player {}:\t{} {} (~{}/sec)\tpotential: {}".format(
             data["name"], bar, round(data["score"], 2),
             round(avg_lasts, 2),

@@ -53,7 +53,6 @@ impl ShipCargo {
     pub fn unload(&mut self, resource: &Resource, amnt: f64) -> f64 {
         if let Some(got) = self.resources.get_mut(resource) {
             let unload = got.min(amnt);
-            log::debug!("{got:?} {amnt:?} {unload:?}");
             *got -= unload;
             self.usage = (self.usage - (resource.volume() * unload)).max(0.0);
             self.usage = (self.usage * 1000.0).round() / 1000.0;
