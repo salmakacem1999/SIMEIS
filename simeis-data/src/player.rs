@@ -19,7 +19,6 @@ pub type PlayerId = u16;
 pub type PlayerKey = [u8; 128];
 
 // Game state for a single player
-#[allow(dead_code)] // DEV
 pub struct Player {
     pub created: Instant,
     pub id: PlayerId,

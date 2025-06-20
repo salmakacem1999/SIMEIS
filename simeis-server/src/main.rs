@@ -28,7 +28,6 @@ async fn main() -> std::io::Result<()> {
     let (gamethread, state) = Game::init();
     let game = state.clone();
 
-    #[allow(clippy::redundant_closure)] // DEV
     let res = web::HttpServer::new(move || {
         web::App::new()
             .wrap(web::middleware::Logger::default())
