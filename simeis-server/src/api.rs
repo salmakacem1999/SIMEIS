@@ -569,6 +569,7 @@ async fn buy_ship_module(
 
     let player = get_player!(srv, req);
     let mut player = player.write().await;
+    let cost = modtype.get_price_buy();
 
     build_response(
         player
@@ -576,6 +577,7 @@ async fn buy_ship_module(
             .map(|v| {
                 json!({
                     "id": v,
+                    "cost": cost,
                 })
             }),
     )
