@@ -2,7 +2,7 @@
 
 Jeu par API
 
-# TODO
+# Améliorations à venir
 
 - Plusieurs parties par serveur, avec un ID particulier
 - Key dans headers, as well as game ID

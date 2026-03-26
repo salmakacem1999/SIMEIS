@@ -1,14 +1,10 @@
-PORT=8080 # 9999 # 8080
+PORT=8080
 URL=f"http://0.0.0.0:{PORT}"
-# URL=f"http://103.45.247.164:{PORT}"
 
 import os
 import json
 import time
 import urllib.request
-
-# TODO Put names to track in sys.argv
-#      If a player name starts with one of the names in sys.argv, add it even if it's not in the top NMAX players
 
 INIT = False
 HIST = {}

@@ -131,8 +131,9 @@ impl Ship {
         }
     }
 
-    // TODO (#22) Create a new ship with random specs
-    //         Used by traders to seek nice ships to buy
+    // TODO (#22) Create a new ship with random specs, with specs between +/- 20% base price
+    //     Change it every X minutes
+    //     Used by traders to seek nice ships to buy
 
     // Public data of this ship to display on the marketplace
     pub fn market_data(&self) -> serde_json::Value {
@@ -167,9 +168,9 @@ impl Ship {
         if let Some(ref pilot) = self.pilot {
             let pilot = self.crew.0.get(pilot).unwrap();
             debug_assert!(matches!(pilot.member_type, CrewMemberType::Pilot));
-            // TODO Handle case where pilot rank > PILOT_FUEL_SHARE * 10
             let totshare = (PILOT_FUEL_SHARE * 10) as f64;
-            self.stats.fuel_consumption *= (totshare - (pilot.rank as f64)) / totshare;
+            let num = (totshare - (pilot.rank as f64).min(totshare)).sqrt();
+            self.stats.fuel_consumption *= num / totshare;
             self.stats.speed =
                 (self.reactor_power as f64) * REACTOR_SPEED_PER_POWER * (pilot.rank as f64);
         } else {
@@ -258,9 +259,10 @@ impl Ship {
         );
 
         let extraction = ExtractionInfo::create(self, &planet);
-        // TODO Else, return an error to say that we don't have any module to extract resource on this planet
         if !extraction.0.is_empty() {
             self.state = ShipState::Extracting(extraction.clone());
+        } else {
+            return Err(Errcode::CannotExtractWithoutModule);
         }
         log::debug!("Extraction of resources: {extraction:?}");
         Ok(extraction)

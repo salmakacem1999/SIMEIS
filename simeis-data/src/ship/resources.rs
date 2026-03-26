@@ -45,7 +45,7 @@ impl Resource {
         matches!(self, Resource::Fuel | Resource::HullPlate)
     }
 
-    // TODO (#24) Get from configuration
+    // TODO (#24) Get from configuration file
     #[inline]
     pub const fn base_price(&self) -> f64 {
         let base = 4.0;

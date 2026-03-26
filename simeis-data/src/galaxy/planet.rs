@@ -39,6 +39,7 @@ impl Planet {
     }
 
     // TODO (#34) Make this depend on the conditions, temperature, etc...
+    // But must be fair between all the players of the game
     #[allow(clippy::if_same_then_else)]
     pub fn resource_density(&self, resource: &Resource) -> f64 {
         if self.solid && resource.mineable(u8::MAX) {

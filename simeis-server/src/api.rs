@@ -29,6 +29,7 @@ use crate::GameState;
 // TODO Use POST queries also, instead of everything with GET
 
 // TODO (#35) Use query parameters (with ntex::web::types::Query) instead of plain URLs
+// TODO Pass player key in HTTP headers
 
 macro_rules! get_player {
     ($srv:ident, $req:ident) => {{
@@ -83,13 +84,7 @@ macro_rules! get_station {
     }};
 }
 
-// TODO    Ensure that multiple players cannot lock themselves:
-//     Ask for write on X, wait for read on Y
-//     Ask for write on Y, wait for read on X
-
-// TODO    Centralise every read / write in the API
-//     and give them a specific order:
-//         player first, station after, galaxy then, etc...
+// Mutex acquisition order
 // - Player index
 // - Player list
 // - Player
@@ -141,13 +136,11 @@ fn build_response(res: ApiResult) -> HttpResponse {
         .json(&body)
 }
 
-// CHECKED
 #[web::get("/ping")]
 async fn ping() -> impl web::Responder {
     build_response(Ok(json!({"ping": "pong"})))
 }
 
-// CHECKED
 #[web::get("/syslogs")]
 async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl web::Responder {
     let player = get_player!(srv, req);
@@ -174,7 +167,6 @@ async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl web::Responder {
     build_response(Ok(json!({ "nb": res.len(), "events": res, })))
 }
 
-// CHECKED
 #[web::get("/player/new/{name}")]
 async fn new_player(srv: GameState, name: Path<String>) -> impl web::Responder {
     let name = name.to_string();
@@ -197,7 +189,6 @@ async fn new_player(srv: GameState, name: Path<String>) -> impl web::Responder {
     }))
 }
 
-// CHECKED
 #[web::get("/player/{id}")]
 async fn get_player(srv: GameState, id: Path<PlayerId>, req: HttpRequest) -> impl web::Responder {
     let Some(key) = get_player_key(&req) else {
@@ -232,7 +223,6 @@ async fn get_player(srv: GameState, id: Path<PlayerId>, req: HttpRequest) -> imp
     build_response(res)
 }
 
-// CHECKED
 #[web::get("/station/{station_id}")]
 async fn get_station_status(
     srv: GameState,
@@ -253,7 +243,6 @@ async fn get_station_status(
     })))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/shipyard/list")]
 async fn list_shipyard_ships(
     srv: GameState,
@@ -279,7 +268,6 @@ async fn list_shipyard_ships(
     build_response(Ok(json!({ "ships": ships })))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/shipyard/buy/{id}")]
 async fn shipyard_buy_ship(
     srv: GameState,
@@ -301,24 +289,28 @@ async fn shipyard_buy_ship(
     )
 }
 
-// CHECKED
-// TODO IMPORTANT    Get ship ID here, and adapt prices based on the ranks of the modules
-#[web::get("/station/{station_id}/shipyard/upgrade")]
+#[web::get("/station/{station_id}/shipyard/upgrade/{ship_id}")]
 async fn shipyard_list_upgrades(
     srv: GameState,
-    station_id: Path<StationId>,
+    args: Path<(StationId, ShipId)>,
     req: HttpRequest,
 ) -> impl web::Responder {
+    let (station_id, ship_id) = args.as_ref();
     let player = get_player!(srv, req);
-    let station = get_station!(srv, player, station_id.as_ref());
+    let station = get_station!(srv, player, station_id);
     let station = station.read().await;
+
+    let Some(ship) = player.ships.get(ship_id.as_ref()) else {
+        return build_response(Err(Errcode::ShipNotFound(*ship_id)));
+    };
 
     let mut res = BTreeMap::new();
     for upgr in ShipUpgrade::iter() {
+        let price = station.get_ship_upgrade_price(&ship, &upgr);
         res.insert(
             upgr,
             json!({
-                "price": station.get_ship_upgrade_price(&upgr),
+                "price": price,
                 "description": upgr.description(),
             }),
         );
@@ -326,7 +318,6 @@ async fn shipyard_list_upgrades(
     build_response(Ok(to_value(res).unwrap()))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/shipyard/upgrade/{ship_id}/{upgrade_type}")]
 async fn shipyard_buy_upgrade(
     srv: GameState,
@@ -350,7 +341,6 @@ async fn shipyard_buy_upgrade(
     )
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/crew/hire/{crewtype}")]
 async fn hire_crew(
     srv: GameState,
@@ -377,7 +367,6 @@ async fn hire_crew(
     build_response(Ok(serde_json::json!({ "id": id })))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/crew/upgrade/ship/{ship_id}")]
 async fn get_crew_upgrades(
     srv: GameState,
@@ -413,9 +402,8 @@ async fn get_crew_upgrades(
     build_response(Ok(to_value(res).unwrap()))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/crew/upgrade/ship/{ship_id}/{crew_id}")]
-async fn buy_crew_upgrade(
+async fn upgrade_ship_crew(
     srv: GameState,
     args: Path<(StationId, ShipId, CrewId)>,
     req: HttpRequest,
@@ -428,7 +416,7 @@ async fn buy_crew_upgrade(
     let station = get_station!(srv, station_id; player; galaxy);
     let station = station.read().await;
 
-    let res = player.upgrade_crew_rank(&station, ship_id, crew_id);
+    let res = player.upgrade_ship_crew(&station, ship_id, crew_id);
     if res.is_ok() {
         drop(station);
         player.update_wages(&galaxy).await;
@@ -436,21 +424,20 @@ async fn buy_crew_upgrade(
     build_response(res.map(|(p, r)| json!({ "new-rank": r, "cost": p})))
 }
 
-// CHECKED
-// TODO (#35)    Have an endpoint /station/{station_id}/crew/upgrade/{crew_id} instead
-#[web::get("/station/{station_id}/crew/upgrade/trader")]
-async fn upgrade_station_trader(
-    station_id: Path<StationId>,
+#[web::get("/station/{station_id}/crew/upgrade/{crew_id}")]
+async fn upgrade_station_crew(
+    args: Path<(StationId, CrewId)>,
     srv: GameState,
     req: HttpRequest,
 ) -> impl web::Responder {
+    let (station_id, crew_id) = args.as_ref();
     let player = get_player!(srv, req);
     let mut player = player.write().await;
     let galaxy = srv.galaxy.read().await;
-    let station = get_station!(srv, station_id.as_ref(); player; galaxy);
+    let station = get_station!(srv, station_id; player; galaxy);
     let mut station = station.write().await;
 
-    let res = player.upgrade_station_trader(station.deref_mut());
+    let res = player.upgrade_station_crew(station.deref_mut(), crew_id);
     if res.is_ok() {
         drop(station);
         player.update_wages(&galaxy).await;
@@ -458,7 +445,6 @@ async fn upgrade_station_trader(
     build_response(res.map(|(p, r)| json!({ "new-rank": r, "cost": p })))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/crew/assign/{crewid}/trading")]
 async fn assign_trader(
     args: Path<(StationId, CrewId)>,
@@ -474,7 +460,6 @@ async fn assign_trader(
     build_response(station.assign_trader(*crew_id).map(|_| json!({})))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/crew/assign/{crewid}/{shipid}/pilot")]
 async fn assign_pilot(
     args: Path<(StationId, CrewId, ShipId)>,
@@ -495,7 +480,6 @@ async fn assign_pilot(
     build_response(station.onboard_pilot(*crew_id, ship).map(|_| json!({})))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/crew/assign/{crewid}/{shipid}/{modid}")]
 async fn assign_operator(
     args: Path<(StationId, CrewId, ShipId, ShipModuleId)>,
@@ -520,7 +504,6 @@ async fn assign_operator(
     )
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/scan")]
 async fn scan(id: Path<StationId>, srv: GameState, req: HttpRequest) -> impl web::Responder {
     let player = get_player!(srv, req);
@@ -535,7 +518,6 @@ async fn scan(id: Path<StationId>, srv: GameState, req: HttpRequest) -> impl web
     build_response(Ok(to_value(&results).unwrap()))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/shop/modules")]
 async fn get_prices_ship_module(
     srv: GameState,
@@ -545,7 +527,6 @@ async fn get_prices_ship_module(
     let player = get_player!(srv, req);
     let _station = get_station!(srv, player, id.as_ref()); // Ensure it exists
 
-    // TODO (#22) Price based on station
     let mut res: BTreeMap<ShipModuleType, f64> = BTreeMap::new();
     for smod in ShipModuleType::iter() {
         let price = smod.get_price_buy();
@@ -555,7 +536,6 @@ async fn get_prices_ship_module(
     build_response(Ok(to_value(res).unwrap()))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/shop/modules/{ship_id}/buy/{modtype}")]
 async fn buy_ship_module(
     srv: GameState,
@@ -583,7 +563,6 @@ async fn buy_ship_module(
     )
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/shop/modules/{ship_id}/upgrade")]
 async fn get_ship_module_upgrade_prices(
     srv: GameState,
@@ -619,7 +598,6 @@ async fn get_ship_module_upgrade_prices(
     build_response(Ok(to_value(res).unwrap()))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/shop/modules/{ship_id}/upgrade/{modid}")]
 async fn buy_ship_module_upgrade(
     srv: GameState,
@@ -646,7 +624,6 @@ async fn buy_ship_module_upgrade(
     )
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/shop/cargo/buy/{amount}")]
 async fn buy_station_cargo(
     srv: GameState,
@@ -668,7 +645,6 @@ async fn buy_station_cargo(
     )
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/upgrades")]
 async fn get_station_upgrades(
     srv: GameState,
@@ -691,7 +667,6 @@ async fn get_station_upgrades(
     })))
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/refuel/{ship_id}")]
 async fn refuel_ship(
     srv: GameState,
@@ -714,7 +689,6 @@ async fn refuel_ship(
     build_response(res)
 }
 
-// CHECKED
 #[web::get("/station/{station_id}/repair/{ship_id}")]
 async fn repair_ship(
     srv: GameState,
@@ -736,8 +710,7 @@ async fn repair_ship(
     build_response(res)
 }
 
-// FIXME Sometimes under heavy load, sometimes get a "Ship not found"
-// CHECKED
+// TODO FIXME Sometimes under heavy load, sometimes get a "Ship not found"
 #[web::get("/ship/{ship_id}")]
 async fn get_ship_status(
     srv: GameState,
@@ -753,7 +726,6 @@ async fn get_ship_status(
     build_response(Ok(to_value(ship).unwrap()))
 }
 
-// CHECKED
 #[web::get("/ship/{ship_id}/travelcost/{x}/{y}/{z}")]
 async fn compute_travel_costs(
     srv: GameState,
@@ -775,7 +747,6 @@ async fn compute_travel_costs(
     )
 }
 
-// CHECKED
 #[web::get("/ship/{ship_id}/navigate/{x}/{y}/{z}")]
 async fn ask_navigate(
     srv: GameState,
@@ -795,7 +766,6 @@ async fn ask_navigate(
     build_response(ship.set_travel(coord).map(|cost| json!(cost)))
 }
 
-// CHECKED
 #[web::get("/ship/{ship_id}/navigation/stop")]
 async fn stop_navigation(
     srv: GameState,
@@ -813,7 +783,6 @@ async fn stop_navigation(
     build_response(ship.stop_navigation().map(|pos| json!({"position": pos})))
 }
 
-// CHECKED
 #[web::get("/ship/{ship_id}/extraction/start")]
 async fn start_extraction(
     srv: GameState,
@@ -833,7 +802,6 @@ async fn start_extraction(
     )
 }
 
-// CHECKED
 #[web::get("/ship/{ship_id}/extraction/stop")]
 async fn stop_extraction(
     srv: GameState,
@@ -850,7 +818,6 @@ async fn stop_extraction(
     build_response(ship.stop_extraction().map(|v| to_value(v).unwrap()))
 }
 
-// CHECKED
 #[web::get("/ship/{ship_id}/unload/{resource}/{amount}")]
 async fn unload_ship_cargo(
     srv: GameState,
@@ -895,7 +862,6 @@ async fn unload_ship_cargo(
     build_response(res.map(|v| json!({ "unloaded": v })))
 }
 
-// CHECKED
 #[web::get("/market/prices")]
 async fn get_market_prices(srv: GameState) -> impl web::Responder {
     let market = srv.market.read().await;
@@ -903,7 +869,6 @@ async fn get_market_prices(srv: GameState) -> impl web::Responder {
     build_response(Ok(res))
 }
 
-// CHECKED
 #[web::get("/market/{station_id}/buy/{resource}/{amnt}")]
 async fn buy_resource(
     srv: GameState,
@@ -929,7 +894,6 @@ async fn buy_resource(
     )
 }
 
-// CHECKED
 #[web::get("/market/{station_id}/sell/{resource}/{amnt}")]
 async fn sell_resource(
     srv: GameState,
@@ -954,7 +918,6 @@ async fn sell_resource(
     build_response(res)
 }
 
-// CHECKED
 #[web::get("/market/{station_id}/fee_rate")]
 async fn get_fee_rate(
     srv: GameState,
@@ -977,7 +940,6 @@ async fn get_fee_rate(
     })))
 }
 
-// CHECKED
 #[cfg(feature = "testing")]
 #[web::get("/tick")]
 async fn tick_server(srv: GameState) -> impl web::Responder {
@@ -999,7 +961,6 @@ async fn tick_server_n(srv: GameState, n: Path<usize>) -> impl web::Responder {
     build_response(Ok(json!({})))
 }
 
-// CHECKED
 #[web::get("/resources")]
 async fn resources_info() -> impl web::Responder {
     let mut data = BTreeMap::new();
@@ -1028,7 +989,6 @@ async fn resources_info() -> impl web::Responder {
     build_response(Ok(to_value(data).unwrap()))
 }
 
-// CHECKED
 #[web::get("/gamestats")]
 async fn gamestats(srv: GameState) -> impl web::Responder {
     let mut data = BTreeMap::new();

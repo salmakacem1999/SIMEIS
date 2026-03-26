@@ -533,4 +533,11 @@ Chaque transaction retourne une donnée `MarketTx` comprenant:
   - Il ne reste que 60 secondes avant que les frais n'épuisent les réserves d'argent
 ], none)
 
-// TODO IMPORTANT  Add the /resources endpoint
+#descr("Informations sur les resources", "resources", "/resources", "resources_info", [
+  Récupérer toutes les informations sur les resources:
+  - Nom
+  - Prix de base
+  - Volume
+  - Difficulté de minage
+  - Rang minimal avant minage
+], none)

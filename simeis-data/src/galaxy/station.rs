@@ -14,7 +14,6 @@ use super::scan::ScanResult;
 use super::{Galaxy, SpaceCoord};
 
 const CARGO_BASE_PRICE: f64 = 2.0;
-// For X units of cargo purshased, price goes from (base ^ n) to (base ^ (n+1))
 const CARGO_PRICE_INCDIV: f64 = 100.0;
 const STATION_INIT_CARGO: f64 = 1000.0;
 
@@ -240,11 +239,9 @@ impl Station {
         Ok(unloaded)
     }
 
-    pub fn get_ship_upgrade_price(&self, upgrade: &ShipUpgrade) -> f64 {
+    pub fn get_ship_upgrade_price(&self, ship: &Ship, upgrade: &ShipUpgrade) -> f64 {
         // TODO (#22) Modify price based on station economy metrics
+        // TODO Modify price based on upgrades already installed on the ship
         upgrade.get_price()
     }
 }
-
-// TODO (#22)    Have a "ship price rate" metric for a station, that afffects the ship prices
-//     Correlated to the price of the resources on the station

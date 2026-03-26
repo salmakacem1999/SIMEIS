@@ -209,7 +209,7 @@ impl Player {
         Ok((price, module.rank))
     }
 
-    pub fn upgrade_crew_rank(
+    pub fn upgrade_ship_crew(
         &mut self,
         station: &Station,
         ship_id: &ShipId,
@@ -239,11 +239,10 @@ impl Player {
         Ok(res)
     }
 
-    pub fn upgrade_station_trader(&mut self, station: &mut Station) -> Result<(f64, u8), Errcode> {
-        let Some(trader_id) = station.trader else {
-            return Err(Errcode::NoTraderAssigned);
+    pub fn upgrade_station_crew(&mut self, station: &mut Station, crew_id: &CrewId) -> Result<(f64, u8), Errcode> {
+        let Some(cm) = station.crew.0.get_mut(crew_id) else {
+            return Err(Errcode::CrewMemberNotFound(*crew_id));
         };
-        let cm = station.crew.0.get_mut(&trader_id).unwrap();
         let price = cm.price_next_rank();
         if price > self.money {
             return Err(Errcode::NotEnoughMoney(self.money, price));
