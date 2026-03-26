@@ -1,6 +1,6 @@
-PORT=9999 # 8080
-# URL=f"http://0.0.0.0:{PORT}"
-URL=f"http://103.45.247.164:{PORT}"
+PORT=8080 # 9999 # 8080
+URL=f"http://0.0.0.0:{PORT}"
+# URL=f"http://103.45.247.164:{PORT}"
 
 import os
 import json
@@ -66,7 +66,7 @@ def get_resources():
     return get("resources")
 
 def get_market():
-    return get("market/prices")["prices"]
+    return get("market/prices")
 
 def disp_market(resources):
     market = get_market()
