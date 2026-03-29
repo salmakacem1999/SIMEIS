@@ -123,7 +123,7 @@ impl Game {
                         let finished = ship.update_flight(ITER_PERIOD.as_secs_f64());
                         if finished {
                             ship.state = ShipState::Idle;
-                            if ship.hull_decay >= ship.hull_decay_capacity {
+                            if ship.hull_decay >= ship.hull_resistance {
                                 deadship.push(*id);
                             } else {
                                 syslog

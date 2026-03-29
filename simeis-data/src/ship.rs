@@ -25,7 +25,7 @@ const HULL_USAGE_BASE: f64 = 5.0 / 100.0;
 
 const FUEL_TANK_CAP_PRICE: f64 = 30.0;
 const CARGO_CAP_PRICE: f64 = 20.0;
-const HULL_DECAY_CAP_PRICE: f64 = 9.0;
+const HULL_RESIS_PRICE: f64 = 9.0;
 const REACTOR_POWER_PRICE: f64 = 4000.0;
 const SHIELD_PRICE: f64 = 2500.0;
 
@@ -46,7 +46,7 @@ pub struct Ship {
     pub id: ShipId,
     pub reactor_power: u16,
     pub fuel_tank_capacity: f64,
-    pub hull_decay_capacity: f64,
+    pub hull_resistance: f64,
     pub modules: BTreeMap<ShipModuleId, ShipModule>,
     pub shield_power: u16,
 
@@ -87,7 +87,7 @@ impl Ship {
             reactor_power: rng.random_range(1..10),
             fuel_tank_capacity: rng.random_range(1..10000) as f64,
             cargo: ShipCargo::with_capacity(cargo_cap),
-            hull_decay_capacity: rng.random_range(1000..50000) as f64,
+            hull_resistance: rng.random_range(1000..50000) as f64,
             ..Default::default()
         }
     }
@@ -99,7 +99,7 @@ impl Ship {
             reactor_power: 1,
             fuel_tank_capacity: 1000.0,
             cargo: ShipCargo::with_capacity(200.0),
-            hull_decay_capacity: 3000.0,
+            hull_resistance: 3000.0,
             shield_power: 0,
             ..Default::default()
         }
@@ -112,7 +112,7 @@ impl Ship {
             reactor_power: 3,
             fuel_tank_capacity: 2000.0,
             cargo: ShipCargo::with_capacity(400.0),
-            hull_decay_capacity: 6000.0,
+            hull_resistance: 6000.0,
             shield_power: 1,
             ..Default::default()
         }
@@ -125,7 +125,7 @@ impl Ship {
             reactor_power: 10,
             fuel_tank_capacity: 4000.0,
             cargo: ShipCargo::with_capacity(1200.0),
-            hull_decay_capacity: 20000.0,
+            hull_resistance: 20000.0,
             shield_power: 3,
             ..Default::default()
         }
@@ -144,7 +144,7 @@ impl Ship {
             "reactor_power": self.reactor_power,
             "cargo_capacity": self.cargo.capacity,
             "fuel_tank_capacity": self.fuel_tank_capacity,
-            "hull_decay_capacity": self.hull_decay_capacity,
+            "hull_resistance": self.hull_resistance,
         })
     }
 
@@ -153,7 +153,7 @@ impl Ship {
         price += (self.reactor_power as f64) * REACTOR_POWER_PRICE;
         price += self.fuel_tank_capacity * FUEL_TANK_CAP_PRICE;
         price += self.cargo.capacity * CARGO_CAP_PRICE;
-        price += self.hull_decay_capacity * HULL_DECAY_CAP_PRICE;
+        price += self.hull_resistance * HULL_RESIS_PRICE;
         price += self.modules.values().map(|m| m.totalcost).sum::<f64>();
         price
     }
@@ -228,7 +228,7 @@ impl Ship {
         }
 
         self.hull_decay += self.stats.hull_usage_rate * dist_delta;
-        if self.hull_decay >= self.hull_decay_capacity {
+        if self.hull_decay >= self.hull_resistance {
             log::debug!("Ship {} worn out all its hull", self.id);
             return true;
         }
@@ -349,7 +349,7 @@ fn test_ship_flight() {
             let costs = travel.compute_costs(&ship).unwrap();
             assert!(
                 (costs.fuel_consumption > ship.fuel_tank)
-                    || (costs.hull_usage > ship.hull_decay_capacity)
+                    || (costs.hull_usage > ship.hull_resistance)
             );
         }
         // TODO (#13) Check hull

@@ -268,7 +268,7 @@ async fn list_shipyard_ships(
             "reactor_power": ship.reactor_power,
             "cargo_capacity": ship.cargo.capacity,
             "fuel_tank_capacity": ship.fuel_tank_capacity,
-            "hull_decay_capacity": ship.hull_decay_capacity,
+            "hull_resistance": ship.hull_resistance,
             "price": ship.compute_price(),
         }));
     }

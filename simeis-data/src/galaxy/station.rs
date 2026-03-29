@@ -220,7 +220,7 @@ impl Station {
         if *qty == 0.0 {
             return Err(Errcode::NoHullPlateInCargo);
         }
-        debug_assert!(ship.hull_decay_capacity >= ship.hull_decay);
+        debug_assert!(ship.hull_resistance >= ship.hull_decay);
 
         let amnt = ship.hull_decay.min(*qty);
         if amnt == 0.0 {
@@ -229,9 +229,9 @@ impl Station {
         let unloaded = self.cargo.unload(&Resource::HullPlate, amnt);
         ship.hull_decay -= unloaded;
         debug_assert!(
-            ship.hull_decay_capacity >= ship.hull_decay,
+            ship.hull_resistance >= ship.hull_decay,
             "{} < {}",
-            ship.hull_decay_capacity,
+            ship.hull_resistance,
             ship.hull_decay
         );
         debug_assert!(ship.hull_decay >= 0.0, "{}", ship.hull_decay);

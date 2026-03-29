@@ -251,7 +251,7 @@ class Tester:
             self.assert_got(ship, "reactor_power", None)
             self.assert_got(ship, "cargo_capacity", None)
             self.assert_got(ship, "fuel_tank_capacity", None)
-            self.assert_got(ship, "hull_decay_capacity", None)
+            self.assert_got(ship, "hull_resistance", None)
             self.assert_got(ship, "price", None)
             ships[ship["id"]] = ship
 
@@ -717,10 +717,8 @@ class Tester:
         after = self.assert_ok(f"/ship/{shipid}")
         assert after["cargo"]["capacity"] > before["cargo"]["capacity"]
         assert after["reactor_power"] > before["reactor_power"]
-        assert after["hull_decay_capacity"] > before["hull_decay_capacity"]
+        assert after["hull_resistance"] > before["hull_resistance"]
 
-    # TODO    Fixup repair on dogfooding
-    #    When 265 of decay, buy 290 plates, then repair, then have 72 decay afterward
     @functest
     def test_repair_refuel(self):
         player = self.create_test_player("test-rich-refuel-repair")
@@ -736,9 +734,9 @@ class Tester:
 
         ship = self.assert_ok(f"/ship/{shipid}")
         hull_decay = self.assert_got(ship, "hull_decay", None)
-        hull_decay_capacity = self.assert_got(ship, "hull_decay_capacity", None)
+        hull_resistance = self.assert_got(ship, "hull_resistance", None)
         assert hull_decay > 0
-        assert hull_decay < hull_decay_capacity
+        assert hull_decay < hull_resistance
 
         fuel = self.assert_got(ship, "fuel_tank", None)
         fuel_tank = self.assert_got(ship, "fuel_tank_capacity", None)

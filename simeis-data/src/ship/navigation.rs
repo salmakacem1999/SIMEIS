@@ -52,7 +52,7 @@ pub struct TravelCost {
 impl TravelCost {
     pub fn have_enough(&self, ship: &Ship) -> bool {
         (ship.fuel_tank >= self.fuel_consumption)
-            && (ship.hull_decay_capacity - ship.hull_decay) >= self.hull_usage
+            && (ship.hull_resistance - ship.hull_decay) >= self.hull_usage
     }
 }
 
