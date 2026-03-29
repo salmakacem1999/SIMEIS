@@ -12,7 +12,7 @@ pub struct ShipCargo {
 }
 
 impl ShipCargo {
-    pub fn with_capacity(cap: f64) -> ShipCargo {
+    pub const fn with_capacity(cap: f64) -> ShipCargo {
         ShipCargo {
             usage: 0.0,
             capacity: cap,
@@ -22,7 +22,7 @@ impl ShipCargo {
 
     pub fn slowing_ratio(&self) -> f64 {
         // let usage_ratio = self.usage / self.capacity;
-        // TODO (#12)    Cargo slows down speed of ship
+        // TODO (#11)    Cargo slows down speed of ship
         0.0
     }
 
@@ -53,7 +53,6 @@ impl ShipCargo {
     pub fn unload(&mut self, resource: &Resource, amnt: f64) -> f64 {
         if let Some(got) = self.resources.get_mut(resource) {
             let unload = got.min(amnt);
-            log::debug!("{got:?} {amnt:?} {unload:?}");
             *got -= unload;
             self.usage = (self.usage - (resource.volume() * unload)).max(0.0);
             self.usage = (self.usage * 1000.0).round() / 1000.0;

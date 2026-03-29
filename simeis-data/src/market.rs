@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{Rng, RngExt};
 use rand_distr::{Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -6,16 +6,18 @@ use strum::IntoEnumIterator;
 
 use crate::{crew::CrewMember, ship::resources::Resource};
 
-const MAX_AVG_AMPL: f64 = 2.0 / 100.0;
+const MAX_AVG_AMPL: f64 = 5.5 / 100.0;
+const STD_DIV: f64 = 1.15;
 pub const MARKET_CHANGE_SEC: f64 = 20.0;
-const BASE_FEE_RATE: f64 = 20.0 / 100.0;
-const FEE_RATE_DEC_POWF: f64 = 1.3;
-const UPD_PRICE_PROBA: f64 = 0.65;
+const BASE_FEE_RATE: f64 = 25.0 / 100.0;
+const FEE_RATE_DEC_POWF: f64 = 1.15;
+const UPD_PRICE_PROBA: f64 = 0.80;
 
-// Buying 10000 worth of a resource can increase the price between 15% and 20%
-const PRICE_INC_DIV: f64 = 10000.0;
-const PRICE_INC_RANGE_MAX: f64 = 20.0 / 100.0;
-const PRICE_INC_MIN_RATIO: f64 = 75.0 / 100.0;
+// Buying 500000 worth of a resource will increase the price between 10% and 30%
+// After  500000 credits, will be capped at btwn 10 and 30%
+const PRICE_INC_CAP: f64 = 500_000.0;
+const PRICE_INC_RANGE_MAX: f64 = 70.0 / 100.0;
+const PRICE_INC_RANGE_MIN: f64 = 30.0 / 100.0;
 
 #[inline]
 pub fn fee_rate(rank: u8) -> f64 {
@@ -39,8 +41,10 @@ impl Market {
     fn rand_distrib(&self, r: &Resource, now_price: f64) -> Normal<f64> {
         let base_price = r.base_price();
         let pratio = now_price / base_price;
+        // 0.3    AVG = 1 - 0.3 = 0.7  * MAX AMPL = 3.5 * 0.7  =  2.45
+        // 1.3    AVG = 1 - 1.3 = -0.3 * MAX AMPL = 3.5 * -0.3 = -1.05
         let avg = (1.0 - pratio) * MAX_AVG_AMPL;
-        let std = avg.abs() + MAX_AVG_AMPL;
+        let std = avg.abs() + (MAX_AVG_AMPL / STD_DIV);
 
         rand_distr::Normal::new(avg, std).unwrap()
     }
@@ -71,20 +75,22 @@ impl Market {
     pub fn buy(&mut self, trader: &CrewMember, r: &Resource, amnt: f64) -> MarketTx {
         assert!(amnt > 0.0);
         let fee_rate = fee_rate(trader.rank);
-        let amnt_wfee = amnt * (1.0 - fee_rate);
 
         let price = *self.prices.get(r).unwrap();
         assert!(price > 0.0);
-        let price_inc_max = ((amnt * price) / PRICE_INC_DIV) * PRICE_INC_RANGE_MAX;
-        let price_inc_min = price_inc_max * PRICE_INC_MIN_RATIO;
-        let mut rng = rand::rng();
-        let inc = rng.random_range(price_inc_min..=price_inc_max);
-        *self.prices.get_mut(r).unwrap() *= 1.0 + inc;
+        let cost = amnt * price;
+        let fees = cost * fee_rate;
 
-        let fees = (amnt * fee_rate) * price;
+        // TODO (#15) Fixup influence on market price
+        // let price_inc_max = (cost / PRICE_INC_CAP).max(1.0) * PRICE_INC_RANGE_MAX;
+        // let price_inc_min = (cost / PRICE_INC_CAP).max(1.0) * PRICE_INC_RANGE_MIN;
+        // let mut rng = rand::rng();
+        // let inc = rng.random_range(price_inc_min..=price_inc_max);
+        // *self.prices.get_mut(r).unwrap() *= 1.0 + inc;
+
         MarketTx {
-            added_cargo: Some((*r, amnt_wfee)),
-            removed_money: Some(amnt * price),
+            added_cargo: Some((*r, amnt)),
+            removed_money: Some(cost + fees),
             fees,
             ..Default::default()
         }
@@ -97,18 +103,18 @@ impl Market {
         let price = *self.prices.get(r).unwrap();
         assert!(price > 0.0);
         let cost = amnt * price;
-        let cost_wfee = cost * (1.0 - fee_rate);
         let fees = cost * fee_rate;
 
-        let price_dec_max = (cost / PRICE_INC_DIV) * PRICE_INC_RANGE_MAX;
-        let price_dec_min = price_dec_max * PRICE_INC_MIN_RATIO;
-        let mut rng = rand::rng();
-        let dec = rng.random_range(price_dec_min..=price_dec_max);
-        *self.prices.get_mut(r).unwrap() *= 1.0 - dec;
+        // TODO (#15) Fixup influence on market price
+        // let price_dec_max = (cost / PRICE_INC_CAP).max(1.0) * PRICE_INC_RANGE_MAX;
+        // let price_dec_min = (cost / PRICE_INC_CAP).max(1.0) * PRICE_INC_RANGE_MIN;
+        // let mut rng = rand::rng();
+        // let dec = rng.random_range(price_dec_min..=price_dec_max);
+        // *self.prices.get_mut(r).unwrap() *= 1.0 - dec;
 
         MarketTx {
             removed_cargo: Some((*r, amnt)),
-            added_money: Some(cost_wfee),
+            added_money: Some(cost - fees),
             fees,
             ..Default::default()
         }

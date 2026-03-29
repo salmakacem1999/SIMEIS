@@ -1,12 +1,6 @@
-use std::collections::BTreeMap;
-
-use cargo::ShipCargo;
-use module::{ShipModule, ShipModuleId};
-use navigation::{FlightData, Travel, TravelCost};
-use rand::Rng;
-use resources::{ExtractionInfo, Resource};
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use shipstats::ShipStats;
+use std::collections::BTreeMap;
 
 use crate::crew::{Crew, CrewId, CrewMemberType};
 use crate::errors::Errcode;
@@ -20,19 +14,26 @@ pub mod resources;
 pub mod shipstats;
 pub mod upgrade;
 
+use cargo::ShipCargo;
+use module::{ShipModule, ShipModuleId};
+use navigation::{FlightData, Travel, TravelCost};
+use resources::{ExtractionInfo, Resource};
+use shipstats::ShipStats;
+
 const PILOT_FUEL_SHARE: u8 = 5; // Rank 10 = 4/5 fuel consumption
 const HULL_USAGE_BASE: f64 = 5.0 / 100.0;
 
-const FUEL_TANK_CAP_PRICE: f64 = 3.0;
-const CARGO_CAP_PRICE: f64 = 10.0;
-const HULL_DECAY_CAP_PRICE: f64 = 5.0;
-const REACTOR_POWER_PRICE: f64 = 300.0;
+const FUEL_TANK_CAP_PRICE: f64 = 30.0;
+const CARGO_CAP_PRICE: f64 = 20.0;
+const HULL_DECAY_CAP_PRICE: f64 = 9.0;
+const REACTOR_POWER_PRICE: f64 = 4000.0;
+const SHIELD_PRICE: f64 = 2500.0;
 
 const REACTOR_SPEED_PER_POWER: f64 = 50.0;
 
 pub type ShipId = u64;
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub enum ShipState {
     #[default]
     Idle,
@@ -40,13 +41,14 @@ pub enum ShipState {
     Extracting(ExtractionInfo),
 }
 
-#[derive(Deserialize, Serialize, Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct Ship {
     pub id: ShipId,
     pub reactor_power: u16,
     pub fuel_tank_capacity: f64,
     pub hull_decay_capacity: f64,
     pub modules: BTreeMap<ShipModuleId, ShipModule>,
+    pub shield_power: u16,
 
     #[serde(default)]
     pub position: SpaceCoord,
@@ -78,7 +80,7 @@ impl Ship {
 
     pub fn random(position: SpaceCoord) -> Ship {
         let mut rng = rand::rng();
-        let cargo_cap = rng.random_range(100.0..10000.0) as f64;
+        let cargo_cap = rng.random_range(10.0..1000.0) as f64;
         Ship {
             id: rng.random(),
             position,
@@ -96,8 +98,9 @@ impl Ship {
             position,
             reactor_power: 1,
             fuel_tank_capacity: 1000.0,
-            cargo: ShipCargo::with_capacity(500.0),
+            cargo: ShipCargo::with_capacity(200.0),
             hull_decay_capacity: 3000.0,
+            shield_power: 0,
             ..Default::default()
         }
     }
@@ -108,8 +111,9 @@ impl Ship {
             position,
             reactor_power: 3,
             fuel_tank_capacity: 2000.0,
-            cargo: ShipCargo::with_capacity(1000.0),
+            cargo: ShipCargo::with_capacity(400.0),
             hull_decay_capacity: 6000.0,
+            shield_power: 1,
             ..Default::default()
         }
     }
@@ -120,14 +124,16 @@ impl Ship {
             position,
             reactor_power: 10,
             fuel_tank_capacity: 4000.0,
-            cargo: ShipCargo::with_capacity(3000.0),
+            cargo: ShipCargo::with_capacity(1200.0),
             hull_decay_capacity: 20000.0,
+            shield_power: 3,
             ..Default::default()
         }
     }
 
-    // TODO (#22) Create a new ship with random specs
-    //         Used by traders to seek nice ships to buy
+    // TODO (#9) Create a new ship with random specs, with specs between +/- 20% base price
+    //     Change it every X minutes
+    //     Used by traders to seek nice ships to buy
 
     // Public data of this ship to display on the marketplace
     pub fn market_data(&self) -> serde_json::Value {
@@ -155,14 +161,16 @@ impl Ship {
     // Updates the performances of the ship based on the crew onboard
     pub fn update_perf_stats(&mut self) {
         self.stats = ShipStats::default();
-        self.stats.hull_usage_rate = HULL_USAGE_BASE;
+        self.stats.hull_usage_rate =
+            HULL_USAGE_BASE / (1.0 + (1.0 + self.shield_power as f64).log(3.5));
         self.stats.fuel_consumption = self.reactor_power as f64;
 
         if let Some(ref pilot) = self.pilot {
             let pilot = self.crew.0.get(pilot).unwrap();
             debug_assert!(matches!(pilot.member_type, CrewMemberType::Pilot));
             let totshare = (PILOT_FUEL_SHARE * 10) as f64;
-            self.stats.fuel_consumption *= (totshare - (pilot.rank as f64)) / totshare;
+            let num = (totshare - (pilot.rank as f64).min(totshare)).sqrt();
+            self.stats.fuel_consumption *= num / totshare;
             self.stats.speed =
                 (self.reactor_power as f64) * REACTOR_SPEED_PER_POWER * (pilot.rank as f64);
         } else {
@@ -172,9 +180,6 @@ impl Ship {
     }
 
     pub fn compute_travel_costs(&self, destination: SpaceCoord) -> Result<TravelCost, Errcode> {
-        let ShipState::Idle = self.state else {
-            return Err(Errcode::ShipNotIdle);
-        };
         let travel = Travel::new(destination);
         let cost = travel.compute_costs(self)?;
         Ok(cost)
@@ -202,7 +207,7 @@ impl Ship {
         let mut finished = false;
         let mut dist_delta = self.stats.speed * tdelta;
         data.dist_done += dist_delta;
-        if data.dist_done > data.dist_tot {
+        if data.dist_done >= data.dist_tot {
             finished = true;
             let doverflow = data.dist_done - data.dist_tot;
             data.dist_done -= doverflow;
@@ -237,14 +242,14 @@ impl Ship {
     pub fn stop_navigation(&mut self) -> Result<SpaceCoord, Errcode> {
         log::debug!("Stopping flight on ship {}", self.id);
         self.state = ShipState::Idle;
-        return Ok(self.position)
+        Ok(self.position)
     }
 
-    pub fn start_extraction(&mut self, galaxy: &Galaxy) -> Result<ExtractionInfo, Errcode> {
+    pub async fn start_extraction(&mut self, galaxy: &Galaxy) -> Result<ExtractionInfo, Errcode> {
         let ShipState::Idle = self.state else {
             return Err(Errcode::ShipNotIdle);
         };
-        let Some(planet) = galaxy.get_planet(&self.position) else {
+        let Some(planet) = galaxy.get_planet(&self.position).await else {
             return Err(Errcode::CannotExtractWithoutPlanet);
         };
         log::debug!(
@@ -254,7 +259,11 @@ impl Ship {
         );
 
         let extraction = ExtractionInfo::create(self, &planet);
-        self.state = ShipState::Extracting(extraction.clone());
+        if !extraction.0.is_empty() {
+            self.state = ShipState::Extracting(extraction.clone());
+        } else {
+            return Err(Errcode::CannotExtractWithoutModule);
+        }
         log::debug!("Extraction of resources: {extraction:?}");
         Ok(extraction)
     }
@@ -294,4 +303,58 @@ impl Ship {
             Ok(unloaded)
         }
     }
+}
+
+#[test]
+fn test_ship_flight() {
+    crate::tests::create_property_based_test(100000, &[], |rng| {
+        let (x, y, z) = (rng.random(), rng.random(), rng.random());
+        let mut ship = Ship::random((x, y, z));
+        ship.fuel_tank = ship.fuel_tank_capacity;
+
+        let pilot_id = rng.random();
+        ship.crew.0.insert(
+            pilot_id,
+            crate::crew::CrewMember::from(CrewMemberType::Pilot),
+        );
+        ship.pilot = Some(pilot_id);
+        ship.update_perf_stats();
+
+        let add = rng.random_range(1..100);
+        let dest = (
+            x.saturating_add(add),
+            y.saturating_add(add),
+            z.saturating_add(add),
+        );
+        let res = ship.set_travel(dest);
+        let init_state = ship.clone();
+        if let Ok(costs) = res {
+            assert!(costs.duration > 0.0);
+            ship.update_flight(costs.duration / 2.0);
+            let ShipState::InFlight(flight) = ship.state else {
+                println!("Ship not in flight: {:?}", ship.state);
+                assert!(false);
+                unreachable!();
+            };
+            assert_eq!(flight.start, (x, y, z));
+            assert_eq!(flight.destination, dest);
+            assert!(flight.dist_done > 0.0);
+            assert_ne!(flight.dist_done, flight.dist_tot);
+            assert!(init_state.fuel_tank > ship.fuel_tank);
+            assert!(ship.fuel_tank < ship.fuel_tank_capacity);
+            assert!(ship.hull_decay > 0.0);
+            assert_eq!(init_state.cargo.usage, ship.cargo.usage);
+        } else {
+            let travel = Travel::new(dest);
+            let costs = travel.compute_costs(&ship).unwrap();
+            assert!(
+                (costs.fuel_consumption > ship.fuel_tank)
+                    || (costs.hull_usage > ship.hull_decay_capacity)
+            );
+        }
+        // TODO (#13) Check hull
+        // TODO (#13) Check fuel
+        // TODO (#13) Check arrived
+        // TODO (#13) Check distance
+    });
 }

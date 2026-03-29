@@ -1,3 +1,4 @@
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
 use crate::ship::resources::Resource;
@@ -22,6 +23,7 @@ impl PlanetInfo {
     }
 }
 
+#[derive(Debug)]
 pub struct Planet {
     pub position: SpaceCoord,
     temperature: u16,
@@ -37,20 +39,15 @@ impl Planet {
         }
     }
 
-    // TODO (#34) Make this depend on the conditions, temperature, etc...
+    // TODO (#5) Make this depend on the conditions, temperature, etc...
+    #[allow(clippy::if_same_then_else)]
     pub fn resource_density(&self, resource: &Resource) -> f64 {
-        if self.solid {
-            match resource {
-                Resource::Stone => 3.0,
-                Resource::Iron => 1.0,
-                _ => 0.0,
-            }
+        if self.solid && resource.mineable(u8::MAX) {
+            6.25
+        } else if !self.solid && resource.suckable(u8::MAX) {
+            6.25
         } else {
-            match resource {
-                Resource::Helium => 3.0,
-                Resource::Ozone => 1.0,
-                _ => 0.0,
-            }
+            0.0
         }
     }
 }

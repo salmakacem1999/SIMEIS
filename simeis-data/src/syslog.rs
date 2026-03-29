@@ -1,7 +1,8 @@
 #![allow(clippy::type_complexity)]
 use std::collections::BTreeMap;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::mpsc::{error::TryRecvError, Receiver, Sender};
+use tokio::sync::{Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
@@ -74,22 +75,22 @@ pub struct SyslogSend {
 
 impl SyslogSend {
     pub fn channel() -> (SyslogSend, SyslogRecv) {
-        let (sender, recv) = std::sync::mpsc::channel();
+        let (sender, recv) = tokio::sync::mpsc::channel(100);
         let tstart = std::time::Instant::now();
         let syslogsend = SyslogSend { sender, tstart };
         (syslogsend, SyslogRecv::init(recv, tstart))
     }
 
-    pub fn event(&self, player: &PlayerId, evt: SyslogEvent) {
+    pub async fn event(&self, player: &PlayerId, evt: SyslogEvent) {
         let ns = self.tstart.elapsed().as_secs_f64();
-        self.sender.send((*player, ns, evt)).unwrap();
+        self.sender.send((*player, ns, evt)).await.unwrap();
     }
 }
 
-pub type SyslogFifo = Arc<RwLock<BTreeMap<PlayerId, RwLock<Fifo<(f64, SyslogEvent)>>>>>;
+pub type SyslogFifo = Arc<RwLock<BTreeMap<PlayerId, Arc<RwLock<Fifo<(f64, SyslogEvent)>>>>>>;
 
 pub struct SyslogRecv {
-    recv: Receiver<SyslogData>,
+    recv: Mutex<Receiver<SyslogData>>,
     pub(crate) fifo: SyslogFifo,
     tstart: std::time::Instant,
 }
@@ -97,16 +98,16 @@ pub struct SyslogRecv {
 impl SyslogRecv {
     pub fn init(recv: Receiver<SyslogData>, tstart: std::time::Instant) -> SyslogRecv {
         SyslogRecv {
-            recv,
+            recv: Mutex::new(recv),
             tstart,
             fifo: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
-    pub fn update(&self) {
+    pub async fn update(&self) {
         loop {
-            match self.recv.try_recv() {
-                Ok((id, ns, evt)) => self.add_to_fifo(id, ns, evt),
+            match self.recv.lock().await.try_recv() {
+                Ok((id, ns, evt)) => self.add_to_fifo(id, ns, evt).await,
                 Err(TryRecvError::Empty) => break,
                 Err(e) => {
                     let msg = format!("Error while receiving syslog: {e:?}");
@@ -117,15 +118,18 @@ impl SyslogRecv {
         }
     }
 
-    pub fn event(&self, player: PlayerId, evt: SyslogEvent) {
-        self.add_to_fifo(player, self.tstart.elapsed().as_secs_f64(), evt);
+    pub async fn event(&self, player: PlayerId, evt: SyslogEvent) {
+        self.add_to_fifo(player, self.tstart.elapsed().as_secs_f64(), evt)
+            .await;
     }
 
-    fn add_to_fifo(&self, id: PlayerId, ns: f64, evt: SyslogEvent) {
+    async fn add_to_fifo(&self, id: PlayerId, ns: f64, evt: SyslogEvent) {
         log::debug!("Player {id} got event {evt:?}");
         let ok = {
-            if let Some(fifo) = self.fifo.read().unwrap().get(&id) {
-                fifo.write().unwrap().push((ns, evt.clone()));
+            let sysfifo = self.fifo.read().await;
+            if let Some(fifo) = sysfifo.get(&id) {
+                let mut player_fifo = fifo.write().await;
+                player_fifo.push((ns, evt.clone()));
                 true
             } else {
                 false
@@ -135,7 +139,8 @@ impl SyslogRecv {
         if !ok {
             let mut fifo = Fifo::new();
             fifo.push((ns, evt));
-            self.fifo.write().unwrap().insert(id, RwLock::new(fifo));
+            let mut sysfifo = self.fifo.write().await;
+            sysfifo.insert(id, Arc::new(RwLock::new(fifo)));
         }
     }
 }

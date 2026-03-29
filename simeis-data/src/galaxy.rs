@@ -1,8 +1,18 @@
-use rand::Rng;
+#![allow(unexpected_cfgs)]
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use rand::rngs::ThreadRng;
+use rand::RngExt;
+
+use tokio::sync::RwLock;
+
+pub mod planet;
+pub mod scan;
+pub mod station;
+
 use scan::ScanResult;
 use station::StationId;
-use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
 
 pub type SpaceUnit = u32;
 pub type SpaceCoord = (SpaceUnit, SpaceUnit, SpaceUnit);
@@ -12,34 +22,33 @@ type GalaxySector = (
     (SpaceUnit, SpaceUnit),
 );
 
-const SECTOR_SIZE: (SpaceUnit, SpaceUnit, SpaceUnit) = (1000, 1000, 1000);
-const PLANETS_PER_SECTOR: usize = 10;
-
-pub mod planet;
-pub mod scan;
-pub mod station;
+const SECTOR_SIZE: (SpaceUnit, SpaceUnit, SpaceUnit) = (5000, 5000, 5000);
+const PLANETS_PER_SECTOR: usize = 3;
+const STATION_FPLANET_DIST: f64 = 500.0;
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub enum SpaceObject {
     BaseStation(Arc<RwLock<station::Station>>),
     Planet(Arc<planet::Planet>),
 }
 
-struct GalaxyMap {
+pub struct Galaxy {
     objects: BTreeMap<SpaceCoord, SpaceObject>,
-    discovered: Vec<GalaxySector>,
+    discovered: Vec<GalaxySector>, // TODO (#6) Index by sector ID in a BTreeMap
 }
 
-impl GalaxyMap {
-    pub fn empty() -> GalaxyMap {
-        GalaxyMap {
+impl Galaxy {
+    pub fn init() -> Galaxy {
+        Galaxy {
             objects: BTreeMap::new(),
             discovered: vec![],
         }
     }
 
     // X, Y and Z can be any point from the given sector
-    pub fn generate_sector(&mut self, coord: &SpaceCoord) {
+    // Returns the index in the "discovered" vector
+    pub fn generate_sector(&mut self, coord: &SpaceCoord) -> usize {
         let (x, y, z) = coord;
         let (secx, secy, secz) = compute_sector(*x, *y, *z);
         log::debug!(
@@ -51,6 +60,8 @@ impl GalaxyMap {
             secz.0,
             secz.1,
         );
+        let ind = self.discovered.len();
+        self.discovered.push((secx, secy, secz));
         let mut rng = rand::rng();
         for _ in 0..PLANETS_PER_SECTOR {
             let x = rng.random_range(secx.0..secx.1);
@@ -59,11 +70,12 @@ impl GalaxyMap {
             let planet = planet::Planet::random((x, y, z), &mut rng);
             if self
                 .insert(&(x, y, z), SpaceObject::Planet(Arc::new(planet)))
-                .is_err()
+                .is_none()
             {
                 continue;
             }
         }
+        ind
     }
 
     pub fn is_discovered(&self, coord: &SpaceCoord) -> bool {
@@ -81,15 +93,15 @@ impl GalaxyMap {
         self.objects.get(coord)
     }
 
-    pub fn insert(&mut self, coord: &SpaceCoord, obj: SpaceObject) -> Result<(), ()> {
+    pub fn insert(&mut self, coord: &SpaceCoord, obj: SpaceObject) -> Option<()> {
         if self.objects.contains_key(coord) {
-            return Err(());
+            return None;
         }
         self.objects.insert(*coord, obj);
-        Ok(())
+        Some(())
     }
 
-    fn list_objects_in_sector(&self, sector: GalaxySector) -> Vec<&SpaceObject> {
+    fn list_objects_in_sector(&self, sector: &GalaxySector) -> Vec<&SpaceObject> {
         let mut objects = vec![];
         for (coord, obj) in self.objects.iter() {
             let (x, y, z) = coord;
@@ -106,61 +118,100 @@ impl GalaxyMap {
         }
         objects
     }
-}
 
-#[derive(Clone)]
-pub struct Galaxy(Arc<RwLock<GalaxyMap>>);
-
-impl Galaxy {
-    pub fn init() -> Galaxy {
-        Galaxy(Arc::new(RwLock::new(GalaxyMap::empty())))
-    }
-
-    // TODO (#11) Generate based on the galaxy
-    pub fn init_new_station(&self) -> (StationId, SpaceCoord) {
-        let mut rng = rand::rng();
-        let coord = (rng.random(), rng.random(), rng.random());
-        let id = rng.random();
-        let station = Arc::new(RwLock::new(station::Station::init(id, coord)));
-
-        let mut galaxy = self.0.write().unwrap();
-        let res = galaxy.insert(&coord, SpaceObject::BaseStation(station));
-        if res.is_err() {
-            return self.init_new_station();
-        }
-        if !galaxy.is_discovered(&coord) {
-            galaxy.generate_sector(&coord);
-        }
-
-        (id, coord)
-    }
-
-    pub fn get_station(&self, coord: &SpaceCoord) -> Option<Arc<RwLock<station::Station>>> {
-        let galaxy = self.0.read().unwrap();
-        let obj = galaxy.get(coord)?;
+    pub async fn get_station(&self, coord: &SpaceCoord) -> Option<Arc<RwLock<station::Station>>> {
+        let obj = self.get(coord)?;
         let SpaceObject::BaseStation(station) = obj else {
             return None;
         };
         Some(station.clone())
     }
 
-    pub fn get_planet(&self, coord: &SpaceCoord) -> Option<Arc<planet::Planet>> {
-        let galaxy = self.0.read().unwrap();
-        let obj = galaxy.get(coord)?;
+    pub async fn get_planet(&self, coord: &SpaceCoord) -> Option<Arc<planet::Planet>> {
+        let obj = self.get(coord)?;
         let SpaceObject::Planet(planet) = obj else {
             return None;
         };
         Some(planet.clone())
     }
 
-    pub fn scan_sector(&self, rank: u8, center: &SpaceCoord) -> ScanResult {
-        let strengh = (rank - 1) as f64;
-        let mut results = ScanResult::empty();
-        for sector in sectors_around(center, strengh) {
-            for obj in self.0.read().unwrap().list_objects_in_sector(sector) {
-                results.add(rank, obj);
+    // TODO (#6) Generate based on the galaxy
+    pub async fn init_new_station(&mut self) -> (StationId, SpaceCoord) {
+        let mut rng = rand::rng();
+
+        let mut seccoord = (rng.random(), rng.random(), rng.random());
+        while self.is_discovered(&seccoord) {
+            seccoord = (rng.random(), rng.random(), rng.random());
+        }
+        let id = rng.random();
+        let ind = self.generate_sector(&seccoord);
+        let sector = self.discovered.get(ind).unwrap();
+
+        let Some(SpaceObject::Planet(pla)) = self
+            .list_objects_in_sector(sector)
+            .iter()
+            .filter(|obj| matches!(obj, SpaceObject::Planet(_)))
+            .nth(0)
+        else {
+            unreachable!("Planet inside generated sector");
+        };
+
+        let mut coord;
+        let mut retry_n = 0;
+        loop {
+            coord = get_rand_coord_near(&pla.position, STATION_FPLANET_DIST, &mut rng);
+            while !is_in_sector(&coord, sector) || self.get(&coord).is_some() {
+                coord = get_rand_coord_near(&pla.position, STATION_FPLANET_DIST, &mut rng);
+            }
+
+            let mut mindist = None;
+            for pla in self
+                .list_objects_in_sector(sector)
+                .iter()
+                .filter_map(|obj| {
+                    if let SpaceObject::Planet(p) = obj {
+                        Some(p)
+                    } else {
+                        None
+                    }
+                })
+            {
+                let dist = get_distance(&pla.position, &coord);
+                if let Some(ref mut m) = mindist {
+                    if dist < *m {
+                        *m = dist;
+                    }
+                } else {
+                    mindist = Some(dist);
+                }
+            }
+
+            let mindist = mindist.unwrap();
+            if (mindist - STATION_FPLANET_DIST).abs() < 1.0 {
+                break;
+            }
+            retry_n += 1;
+            log::warn!("{retry_n} {mindist} {STATION_FPLANET_DIST}");
+            if retry_n > 10000 {
+                panic!("Too many retries");
             }
         }
+        let station = Arc::new(RwLock::new(station::Station::init(id, coord)));
+        self.insert(&coord, SpaceObject::BaseStation(station))
+            .unwrap();
+        (id, coord)
+    }
+
+    pub async fn scan_sector(&self, rank: u8, center: &SpaceCoord) -> ScanResult {
+        let strengh = (rank - 1) as f64;
+        let mut results = ScanResult::empty();
+        debug_assert!(strengh >= 0.0);
+        for sector in sectors_around(center, strengh) {
+            for obj in self.list_objects_in_sector(&sector) {
+                results.add(rank, obj).await;
+            }
+        }
+        debug_assert!(!results.planets.is_empty()); // We should always have some planets
         results
     }
 }
@@ -187,7 +238,7 @@ pub fn get_direction(a: &SpaceCoord, b: &SpaceCoord) -> (f64, f64, f64) {
     (delta.0 / distance, delta.1 / distance, delta.2 / distance)
 }
 
-// TODO (#33)   Unit tests on this one
+// TODO (#6)   Unit tests on this one
 fn compute_sector(x: SpaceUnit, y: SpaceUnit, z: SpaceUnit) -> GalaxySector {
     let start_x = x - (x % SECTOR_SIZE.0);
     let end_x = start_x.saturating_add(SECTOR_SIZE.0);
@@ -206,7 +257,15 @@ pub fn translation(start: SpaceCoord, direction: (f64, f64, f64), dist: f64) -> 
     )
 }
 
-// TODO (#27)    Make this scan use a sphere from the center point
+fn is_in_sector(coord: &SpaceCoord, sector: &GalaxySector) -> bool {
+    coord.0 >= sector.0 .0
+        && coord.0 < sector.0 .1
+        && coord.1 >= sector.1 .0
+        && coord.1 < sector.1 .1
+        && coord.2 >= sector.2 .0
+        && coord.2 < sector.2 .1
+}
+
 fn sectors_around(center: &SpaceCoord, radius: f64) -> Vec<GalaxySector> {
     let mut sectors = vec![];
     let centersec = compute_sector(center.0, center.1, center.2);
@@ -248,4 +307,68 @@ fn sectors_around(center: &SpaceCoord, radius: f64) -> Vec<GalaxySector> {
     }
 
     sectors
+}
+
+fn get_rand_coord_near(obj: &SpaceCoord, dist: f64, rng: &mut ThreadRng) -> SpaceCoord {
+    let theta = rng.random_range(0.0..2.0 * std::f64::consts::PI); // azimuthal angle
+    let phi = rng.random_range(0.0..std::f64::consts::PI); // polar angle
+    let x = (obj.0 as f64) + (dist * phi.sin() * theta.cos());
+    let y = (obj.1 as f64) + (dist * phi.sin() * theta.sin());
+    let z = (obj.2 as f64) + (dist * phi.cos());
+    (x as u32, y as u32, z as u32)
+}
+
+#[test]
+fn test_compute_sector() {
+    let mut rng: rand::rngs::SmallRng = rand::make_rng();
+    for _ in 0..10000000 {
+        let x = rng.random();
+        let y = rng.random();
+        let z = rng.random();
+        let sec = compute_sector(x, y, z);
+        assert!(is_in_sector(&(x, y, z), &sec));
+    }
+    assert_eq!(
+        compute_sector(SECTOR_SIZE.0 - 1, 0, 0),
+        ((0, SECTOR_SIZE.0), (0, SECTOR_SIZE.1), (0, SECTOR_SIZE.2))
+    );
+    assert_eq!(
+        compute_sector(0, SECTOR_SIZE.1 - 1, 0),
+        ((0, SECTOR_SIZE.0), (0, SECTOR_SIZE.1), (0, SECTOR_SIZE.2))
+    );
+    assert_eq!(
+        compute_sector(0, 0, SECTOR_SIZE.2 - 1),
+        ((0, SECTOR_SIZE.0), (0, SECTOR_SIZE.1), (0, SECTOR_SIZE.2))
+    );
+
+    assert_eq!(
+        compute_sector(SECTOR_SIZE.0, 0, 0),
+        (
+            (SECTOR_SIZE.0, 2 * SECTOR_SIZE.0),
+            (0, SECTOR_SIZE.1),
+            (0, SECTOR_SIZE.2)
+        )
+    );
+    assert_eq!(
+        compute_sector(0, SECTOR_SIZE.1, 0),
+        (
+            (0, SECTOR_SIZE.0),
+            (SECTOR_SIZE.1, 2 * SECTOR_SIZE.1),
+            (0, SECTOR_SIZE.2)
+        )
+    );
+    assert_eq!(
+        compute_sector(0, 0, SECTOR_SIZE.2),
+        (
+            (0, SECTOR_SIZE.0),
+            (0, SECTOR_SIZE.1),
+            (SECTOR_SIZE.2, 2 * SECTOR_SIZE.2)
+        )
+    );
+}
+
+#[cfg(feature = "heavy_testing")]
+#[test]
+fn test_heavy_testing() {
+    assert!(false);
 }

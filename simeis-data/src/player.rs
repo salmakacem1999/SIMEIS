@@ -1,7 +1,9 @@
-use rand::RngCore;
-use std::hash::Hasher;
-use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeMap;
+use std::hash::Hasher;
+use std::time::Instant;
+
+use rand::Rng;
 
 use crate::crew::CrewId;
 use crate::errors::Errcode;
@@ -12,16 +14,17 @@ use crate::ship::upgrade::ShipUpgrade;
 use crate::ship::{Ship, ShipId};
 use crate::syslog::{SyslogEvent, SyslogRecv};
 
-const INIT_MONEY: f64 = 30000.0;
+const INIT_MONEY: f64 = 72000.0;
 
 pub type PlayerId = u16;
 pub type PlayerKey = [u8; 128];
 
 // Game state for a single player
-#[allow(dead_code)] // DEV
 pub struct Player {
+    pub created: Instant,
     pub id: PlayerId,
     pub key: PlayerKey,
+    pub score: f64,
     pub lost: bool,
 
     pub name: String,
@@ -50,11 +53,13 @@ impl Player {
         let mut stations = BTreeMap::new();
         stations.insert(station.0, station.1);
         Player {
+            created: Instant::now(),
             key: randbytes,
             id: (hasher.finish() % (PlayerId::MAX as u64)) as PlayerId,
             lost: false,
 
             money,
+            score: 0.0,
             costs: 0.0,
 
             name,
@@ -63,12 +68,17 @@ impl Player {
         }
     }
 
-    // SAFETY NOTE Only use this function when a &mut Station is NOT present, or deadlock
-    pub fn update_wages(&mut self, galaxy: &Galaxy) {
+    // SAFETY Will deadlock if a &mut station exists when this is called
+    pub async fn update_wages(&mut self, galaxy: &Galaxy) {
         self.costs = 0.0;
+        let mut stations = vec![];
         for coord in self.stations.values() {
-            let station = galaxy.get_station(coord).unwrap();
-            let station = station.read().unwrap();
+            stations.push(galaxy.get_station(coord).await.unwrap());
+        }
+
+        for station in stations {
+            // Deadlock because of this
+            let station = station.read().await;
             self.costs += station.crew.sum_wages();
             self.costs += station.idle_crew.sum_wages();
         }
@@ -79,19 +89,19 @@ impl Player {
             .sum::<f64>();
     }
 
-    pub fn update_money(&mut self, syslog: &SyslogRecv, tdelta: f64) {
+    pub async fn update_money(&mut self, syslog: &SyslogRecv, tdelta: f64) {
         let before = self.money < (self.costs * 60.0);
         self.money -= self.costs * tdelta;
         let after = self.money < (self.costs * 60.0);
         if after && !before {
             let tleft = std::time::Duration::from_secs_f64(self.money / self.costs);
-            syslog.event(self.id, SyslogEvent::LowFunds(tleft));
+            syslog.event(self.id, SyslogEvent::LowFunds(tleft)).await;
         }
         if self.money < 0.0 && !self.lost {
             self.lost = true;
-            syslog.event(self.id, SyslogEvent::GameLost);
-            // TODO (#19)  Allow to create a new game with the same name if old one lost
-            // TODO (#19)  What to do with its resources, ships, etc...
+            syslog.event(self.id, SyslogEvent::GameLost).await;
+            // TODO (#10)  Allow to create a new game with the same name if old one lost
+            // TODO (#10)  What to do with its resources, ships, etc...
         }
     }
 
@@ -150,7 +160,6 @@ impl Player {
         }
         self.money -= price;
         let id = (ship.modules.len() + 1) as ShipModuleId;
-        log::warn!("id: {id:?}");
         ship.modules.insert(id, modtype.new_module());
         Ok(id)
     }
@@ -165,7 +174,7 @@ impl Player {
             return Err(Errcode::ShipNotFound(*ship_id));
         };
 
-        let price = station.get_ship_upgrade_price(upgrade);
+        let price = station.get_ship_upgrade_price(ship, upgrade);
         if price > self.money {
             return Err(Errcode::NotEnoughMoney(self.money, price));
         }
@@ -201,7 +210,7 @@ impl Player {
         Ok((price, module.rank))
     }
 
-    pub fn upgrade_crew_rank(
+    pub fn upgrade_ship_crew(
         &mut self,
         station: &Station,
         ship_id: &ShipId,
@@ -231,11 +240,14 @@ impl Player {
         Ok(res)
     }
 
-    pub fn upgrade_station_trader(&mut self, station: &mut Station) -> Result<(f64, u8), Errcode> {
-        let Some(trader_id) = station.trader else {
-            return Err(Errcode::NoTraderAssigned);
+    pub fn upgrade_station_crew(
+        &mut self,
+        station: &mut Station,
+        crew_id: &CrewId,
+    ) -> Result<(f64, u8), Errcode> {
+        let Some(cm) = station.crew.0.get_mut(crew_id) else {
+            return Err(Errcode::CrewMemberNotFound(*crew_id));
         };
-        let cm = station.crew.0.get_mut(&trader_id).unwrap();
         let price = cm.price_next_rank();
         if price > self.money {
             return Err(Errcode::NotEnoughMoney(self.money, price));

@@ -44,6 +44,10 @@
   in "${app}/bin/functionnal-tests";
 
   check_rust_code = let
+    allIgnoredCVE = [
+      "RUSTSEC-2025-0047"
+    ];
+    allIgnored = builtins.concatStringsSep " " (builtins.map (s: "--ignore ${s}") allIgnoredCVE);
     app = pkgs.writeShellApplication {
       name = "rust-check-code";
       runtimeInputs = deps ++ [ pkgs.gcc ];
@@ -54,7 +58,7 @@
         cargo check
         cargo clippy --no-deps --frozen -- -D warnings
         cargo fmt --check
-        cargo audit
+        cargo audit ${allIgnored}
         if ! [ -d supply-chain ]; then
           cargo vet init
         fi

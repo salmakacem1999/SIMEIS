@@ -14,13 +14,12 @@ use super::scan::ScanResult;
 use super::{Galaxy, SpaceCoord};
 
 const CARGO_BASE_PRICE: f64 = 2.0;
-// For X units of cargo purshased, price goes from (base ^ n) to (base ^ (n+1))
-const CARGO_PRICE_INCDIV: f64 = 1000.0;
+const CARGO_PRICE_INCDIV: f64 = 100.0;
 const STATION_INIT_CARGO: f64 = 1000.0;
 
 pub type StationId = u16;
 
-// TODO (#43) Add refineries to create fuel & hull plate from raw resources
+// TODO (#7) Add refineries to create fuel & hull plate from raw resources
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StationInfo {
     pub id: StationId,
@@ -28,7 +27,7 @@ pub struct StationInfo {
 }
 
 impl StationInfo {
-    // TODO (#27) Based on the scanner rank, get informations on crew and cargo
+    // TODO (#8) Based on the scanner rank, get informations on crew and cargo
     pub fn scan(_rank: u8, station: &Station) -> StationInfo {
         StationInfo {
             id: station.id,
@@ -37,6 +36,7 @@ impl StationInfo {
     }
 }
 
+#[derive(Debug)]
 pub struct Station {
     pub id: StationId,
     pub position: SpaceCoord,
@@ -61,9 +61,9 @@ impl Station {
         }
     }
 
-    // TODO (#27) Allow to build improvements for the scanner
-    pub fn scan(&self, galaxy: &Galaxy) -> ScanResult {
-        galaxy.scan_sector(1, &self.position)
+    // TODO (#8) Allow to build improvements for the scanner
+    pub async fn scan(&self, galaxy: &Galaxy) -> ScanResult {
+        galaxy.scan_sector(1, &self.position).await
     }
 
     pub fn cargo_price(&self) -> f64 {
@@ -157,6 +157,7 @@ impl Station {
 
         let tx = market.buy(cm, resource, amnt);
         player.money -= tx.removed_money.unwrap();
+        player.score -= tx.removed_money.unwrap();
         let (r, a) = tx.added_cargo.unwrap();
         self.cargo.add_resource(&r, a);
         Ok(tx)
@@ -177,12 +178,13 @@ impl Station {
             return Err(Errcode::SellNothing);
         };
         let amnt = amnt.min(*can_cargo);
-        if amnt == 0.0 {
+        if amnt <= 0.0 {
             return Err(Errcode::SellNothing);
         }
 
         let tx = market.sell(cm, resource, amnt);
         player.money += tx.added_money.unwrap();
+        player.score += tx.added_money.unwrap();
         let (r, a) = tx.removed_cargo.unwrap();
         let unloaded = self.cargo.unload(&r, a);
         debug_assert_eq!(unloaded, a);
@@ -190,6 +192,9 @@ impl Station {
     }
 
     pub fn refuel_ship(&mut self, ship: &mut Ship) -> Result<f64, Errcode> {
+        if self.position != ship.position {
+            return Err(Errcode::ShipNotInStation);
+        }
         let Some(qty) = self.cargo.resources.get(&Resource::Fuel) else {
             return Err(Errcode::NoFuelInCargo);
         };
@@ -206,6 +211,9 @@ impl Station {
     }
 
     pub fn repair_ship(&mut self, ship: &mut Ship) -> Result<f64, Errcode> {
+        if self.position != ship.position {
+            return Err(Errcode::ShipNotInStation);
+        }
         let Some(qty) = self.cargo.resources.get(&Resource::HullPlate) else {
             return Err(Errcode::NoHullPlateInCargo);
         };
@@ -231,11 +239,9 @@ impl Station {
         Ok(unloaded)
     }
 
-    pub fn get_ship_upgrade_price(&self, upgrade: &ShipUpgrade) -> f64 {
-        // TODO (#22) Modify price based on station economy metrics
+    pub fn get_ship_upgrade_price(&self, _ship: &Ship, upgrade: &ShipUpgrade) -> f64 {
+        // TODO (#9) Modify price based on station economy metrics
+        // TODO (#9) Modify price based on upgrades already installed on the ship
         upgrade.get_price()
     }
 }
-
-// TODO (#22)    Have a "ship price rate" metric for a station, that afffects the ship prices
-//     Correlated to the price of the resources on the station

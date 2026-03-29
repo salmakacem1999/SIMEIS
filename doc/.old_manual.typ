@@ -532,3 +532,12 @@ Chaque transaction retourne une donnée `MarketTx` comprenant:
   - Le déchargement des resources d'un vaisseau n'est pas possible (voir @unload)
   - Il ne reste que 60 secondes avant que les frais n'épuisent les réserves d'argent
 ], none)
+
+#descr("Informations sur les resources", "resources", "/resources", "resources_info", [
+  Récupérer toutes les informations sur les resources:
+  - Nom
+  - Prix de base
+  - Volume
+  - Difficulté de minage
+  - Rang minimal avant minage
+], none)

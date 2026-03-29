@@ -2,3 +2,7 @@ target
 .cargohome
 result
 *.pdf
+*.zip
+.~lock.*.ods#
+scores.json
+__pycache__
