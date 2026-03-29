@@ -4,11 +4,15 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use base64::{prelude::BASE64_STANDARD, Engine};
+use rand::RngExt;
+use serde_json::{json, to_value, Value};
+use strum::IntoEnumIterator;
+
 use ntex::web::types::Path;
 use ntex::web::{self, HttpRequest, HttpResponse, ServiceConfig};
-use rand::Rng;
-use serde_json::{json, to_value, Value};
+
 use simeis_data::crew::{CrewId, CrewMember, CrewMemberType};
+use simeis_data::errors::Errcode;
 use simeis_data::galaxy::station::StationId;
 use simeis_data::galaxy::SpaceUnit;
 use simeis_data::market::fee_rate;
@@ -18,13 +22,10 @@ use simeis_data::ship::resources::Resource;
 use simeis_data::ship::upgrade::ShipUpgrade;
 use simeis_data::ship::{Ship, ShipId};
 use simeis_data::syslog::SyslogEvent;
-use strum::IntoEnumIterator;
-
-pub type ApiResult = Result<Value, Errcode>;
-
-use simeis_data::errors::Errcode;
 
 use crate::GameState;
+
+pub type ApiResult = Result<Value, Errcode>;
 
 // TODO (#14) Use POST queries also, instead of everything with GET
 

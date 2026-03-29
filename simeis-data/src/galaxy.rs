@@ -1,11 +1,18 @@
 #![allow(unexpected_cfgs)]
-use rand::rngs::ThreadRng;
-use rand::Rng;
-use scan::ScanResult;
-use station::StationId;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
+use rand::rngs::ThreadRng;
+use rand::RngExt;
+
 use tokio::sync::RwLock;
+
+pub mod planet;
+pub mod scan;
+pub mod station;
+
+use scan::ScanResult;
+use station::StationId;
 
 pub type SpaceUnit = u32;
 pub type SpaceCoord = (SpaceUnit, SpaceUnit, SpaceUnit);
@@ -18,10 +25,6 @@ type GalaxySector = (
 const SECTOR_SIZE: (SpaceUnit, SpaceUnit, SpaceUnit) = (5000, 5000, 5000);
 const PLANETS_PER_SECTOR: usize = 3;
 const STATION_FPLANET_DIST: f64 = 500.0;
-
-pub mod planet;
-pub mod scan;
-pub mod station;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -317,7 +320,7 @@ fn get_rand_coord_near(obj: &SpaceCoord, dist: f64, rng: &mut ThreadRng) -> Spac
 
 #[test]
 fn test_compute_sector() {
-    let mut rng = <rand::rngs::SmallRng as rand::SeedableRng>::from_os_rng();
+    let mut rng: rand::rngs::SmallRng = rand::make_rng();
     for _ in 0..10000000 {
         let x = rng.random();
         let y = rng.random();

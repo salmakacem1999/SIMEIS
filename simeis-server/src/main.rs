@@ -27,9 +27,9 @@ async fn main() -> std::io::Result<()> {
     let (gamethread, state) = Game::init();
     let game = state.clone();
 
-    let res = web::HttpServer::new(move || {
+    let res = web::HttpServer::new(async move || {
         web::App::new()
-            .wrap(web::middleware::Logger::default())
+            .middleware(web::middleware::Logger::default())
             .state(state.clone())
             .configure(api::configure)
     })

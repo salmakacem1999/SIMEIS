@@ -1,7 +1,7 @@
-use base64::{prelude::BASE64_STANDARD, Engine};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -9,7 +9,8 @@ use tokio::task::JoinHandle;
 #[cfg(not(feature = "testing"))]
 use tokio::sync::mpsc::error::TryRecvError;
 
-use rand::{Rng, SeedableRng};
+use base64::{prelude::BASE64_STANDARD, Engine};
+use rand::{Rng, RngExt};
 
 use crate::errors::Errcode;
 use crate::galaxy::Galaxy;
@@ -70,7 +71,7 @@ impl Game {
         let sleepmin_iter = ITER_PERIOD;
         let mut last_iter = Instant::now();
         let mut market_last_tick = Instant::now();
-        let mut rng = rand::rngs::SmallRng::from_os_rng();
+        let mut rng: rand::rngs::SmallRng = rand::make_rng();
 
         'main: loop {
             #[cfg(feature = "testing")]

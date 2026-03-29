@@ -1,12 +1,6 @@
-use std::collections::BTreeMap;
-
-use cargo::ShipCargo;
-use module::{ShipModule, ShipModuleId};
-use navigation::{FlightData, Travel, TravelCost};
-use rand::Rng;
-use resources::{ExtractionInfo, Resource};
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use shipstats::ShipStats;
+use std::collections::BTreeMap;
 
 use crate::crew::{Crew, CrewId, CrewMemberType};
 use crate::errors::Errcode;
@@ -19,6 +13,12 @@ pub mod navigation;
 pub mod resources;
 pub mod shipstats;
 pub mod upgrade;
+
+use cargo::ShipCargo;
+use module::{ShipModule, ShipModuleId};
+use navigation::{FlightData, Travel, TravelCost};
+use resources::{ExtractionInfo, Resource};
+use shipstats::ShipStats;
 
 const PILOT_FUEL_SHARE: u8 = 5; // Rank 10 = 4/5 fuel consumption
 const HULL_USAGE_BASE: f64 = 5.0 / 100.0;

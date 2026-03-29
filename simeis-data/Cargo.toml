@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rand_distr = "0.5.1"
+rand_distr = "0.6.0"
 
 base64 = { workspace = true }
 log = { workspace = true }
