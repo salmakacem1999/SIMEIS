@@ -7,8 +7,8 @@ use base64::{prelude::BASE64_STANDARD, Engine};
 use serde_json::{json, to_value, Value};
 use strum::IntoEnumIterator;
 
-use actix_web::web::{Path, ServiceConfig};
-use actix_web::{self, get, HttpRequest, HttpResponse, Responder};
+use ntex::web::types::Path;
+use ntex::web::{self, HttpRequest, HttpResponse, ServiceConfig};
 
 use simeis_data::crew::{CrewId, CrewMemberType};
 use simeis_data::errors::Errcode;
@@ -135,14 +135,14 @@ fn build_response(res: ApiResult) -> HttpResponse {
 }
 
 // Test the connection to the server
-#[get("/ping")]
-async fn ping() -> impl Responder {
+#[web::get("/ping")]
+async fn ping() -> impl web::Responder {
     build_response(Ok(json!({"ping": "pong"})))
 }
 
 // Get the logs from the server
-#[get("/syslogs")]
-async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl Responder {
+#[web::get("/syslogs")]
+async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl web::Responder {
     let player = get_player!(srv, req);
     let pid = player.read().await.id;
     let allfifo = srv.fifo_events.read().await;
@@ -168,8 +168,8 @@ async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl Responder {
 }
 
 // Creates a new player in the game
-#[get("/player/new/{name}")]
-async fn new_player(srv: GameState, name: Path<String>) -> impl Responder {
+#[web::get("/player/new/{name}")]
+async fn new_player(srv: GameState, name: Path<String>) -> impl web::Responder {
     let name = name.to_string();
     for pid in srv.players.get_all_keys().await {
         let player = srv.players.clone_val(&pid).await.unwrap();
@@ -188,8 +188,8 @@ async fn new_player(srv: GameState, name: Path<String>) -> impl Responder {
 }
 
 // Get the status from the player of a given id. If the ID is yours, give extensive metadata, else, minimal informations
-#[get("/player/{id}")]
-async fn get_player(srv: GameState, id: Path<PlayerId>, req: HttpRequest) -> impl Responder {
+#[web::get("/player/{id}")]
+async fn get_player(srv: GameState, id: Path<PlayerId>, req: HttpRequest) -> impl web::Responder {
     let Some(key) = get_player_key(&req) else {
         return build_response(Err(Errcode::NoPlayerKey));
     };
@@ -222,12 +222,12 @@ async fn get_player(srv: GameState, id: Path<PlayerId>, req: HttpRequest) -> imp
 }
 
 // Get status of a station
-#[get("/station/{station_id}")]
+#[web::get("/station/{station_id}")]
 async fn get_station_status(
     srv: GameState,
     id: Path<StationId>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let player = get_player!(srv, req);
     let player = player.read().await;
     let station = get_station!(srv, id.as_ref(); player);
@@ -236,12 +236,12 @@ async fn get_station_status(
 }
 
 // List all the ships available for buying
-#[get("/station/{station_id}/shipyard/list")]
+#[web::get("/station/{station_id}/shipyard/list")]
 async fn list_shipyard_ships(
     srv: GameState,
     id: Path<StationId>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let player = get_player!(srv, req);
     let station = get_station!(srv, player, id.as_ref());
     let station = station.read().await;
@@ -262,12 +262,12 @@ async fn list_shipyard_ships(
 }
 
 // Buy a ship from the station's shop
-#[get("/station/{station_id}/shipyard/buy/{id}")]
+#[web::get("/station/{station_id}/shipyard/buy/{id}")]
 async fn shipyard_buy_ship(
     srv: GameState,
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -284,12 +284,12 @@ async fn shipyard_buy_ship(
 }
 
 // List all upgrades available for buying on a specific ship, on the station
-#[get("/station/{station_id}/shipyard/upgrade/{ship_id}")]
+#[web::get("/station/{station_id}/shipyard/upgrade/{ship_id}")]
 async fn shipyard_list_upgrades(
     srv: GameState,
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id) = args.as_ref();
     let player = get_player!(srv, req);
     let station = get_station!(srv, player, station_id);
@@ -315,12 +315,12 @@ async fn shipyard_list_upgrades(
 }
 
 // Buy an upgrade and install it on a ship
-#[get("/station/{station_id}/shipyard/upgrade/{ship_id}/{upgrade_type}")]
+#[web::get("/station/{station_id}/shipyard/upgrade/{ship_id}/{upgrade_type}")]
 async fn shipyard_buy_upgrade(
     srv: GameState,
     args: Path<(StationId, ShipId, String)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id, upgrade_type) = args.as_ref();
     let Ok(upgrade_type) = ShipUpgrade::from_str(upgrade_type) else {
         return build_response(Err(Errcode::InvalidArgument("upgrade type")));
@@ -339,12 +339,12 @@ async fn shipyard_buy_upgrade(
 }
 
 // Hire a new crew member on the station. Unless assigned, it will stay idle
-#[get("/station/{station_id}/crew/hire/{crewtype}")]
+#[web::get("/station/{station_id}/crew/hire/{crewtype}")]
 async fn hire_crew(
     srv: GameState,
     args: Path<(StationId, String)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, crewtype) = args.as_ref();
     let Ok(crewtype) = CrewMemberType::from_str(crewtype.as_str()) else {
         return build_response(Err(Errcode::InvalidArgument("crewtype")));
@@ -362,12 +362,12 @@ async fn hire_crew(
 }
 
 // List all the upgrades available for the crew of a specific ship
-#[get("/station/{station_id}/crew/upgrade/ship/{ship_id}")]
+#[web::get("/station/{station_id}/crew/upgrade/ship/{ship_id}")]
 async fn get_crew_upgrades(
     srv: GameState,
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -398,12 +398,12 @@ async fn get_crew_upgrades(
 }
 
 // Upgrade a crew member of a specific ship
-#[get("/station/{station_id}/crew/upgrade/ship/{ship_id}/{crew_id}")]
+#[web::get("/station/{station_id}/crew/upgrade/ship/{ship_id}/{crew_id}")]
 async fn upgrade_ship_crew(
     srv: GameState,
     args: Path<(StationId, ShipId, CrewId)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id, crew_id) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -420,12 +420,12 @@ async fn upgrade_ship_crew(
 }
 
 // Upgrade a crew member of the station
-#[get("/station/{station_id}/crew/upgrade/{crew_id}")]
+#[web::get("/station/{station_id}/crew/upgrade/{crew_id}")]
 async fn upgrade_station_crew(
     args: Path<(StationId, CrewId)>,
     srv: GameState,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, crew_id) = args.as_ref();
     let player = get_player!(srv, req);
     let mut player = player.write().await;
@@ -445,12 +445,12 @@ async fn upgrade_station_crew(
 
 // TODO (#14) Make this URL generic: work for any role on the station
 // Assign a crew member as a trader on a station. The level of the trader will affect the fee rate applied on the market
-#[get("/station/{station_id}/crew/assign/{crewid}/trading")]
+#[web::get("/station/{station_id}/crew/assign/{crewid}/trading")]
 async fn assign_trader(
     args: Path<(StationId, CrewId)>,
     srv: GameState,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, crew_id) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -463,12 +463,12 @@ async fn assign_trader(
 }
 
 // Assign a crew member as a pilot on a ship. The level of the pilot will affect the speed of the ship, as well as it's fuel consumption
-#[get("/station/{station_id}/crew/assign/{crewid}/{shipid}/pilot")]
+#[web::get("/station/{station_id}/crew/assign/{crewid}/{shipid}/pilot")]
 async fn assign_pilot(
     args: Path<(StationId, CrewId, ShipId)>,
     srv: GameState,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, crew_id, ship_id) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -485,12 +485,12 @@ async fn assign_pilot(
 }
 
 // Assign a crew member as an operator on a ship. The level of the crew member will affect the extraction rate of the resources
-#[get("/station/{station_id}/crew/assign/{crewid}/{shipid}/{modid}")]
+#[web::get("/station/{station_id}/crew/assign/{crewid}/{shipid}/{modid}")]
 async fn assign_operator(
     args: Path<(StationId, CrewId, ShipId, ShipModuleId)>,
     srv: GameState,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, crew_id, ship_id, modid) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -507,8 +507,8 @@ async fn assign_operator(
 }
 
 // Scan for planets around the station
-#[get("/station/{station_id}/scan")]
-async fn scan(id: Path<StationId>, srv: GameState, req: HttpRequest) -> impl Responder {
+#[web::get("/station/{station_id}/scan")]
+async fn scan(id: Path<StationId>, srv: GameState, req: HttpRequest) -> impl web::Responder {
     let player = get_player!(srv, req);
     let player = player.read().await;
 
@@ -522,12 +522,12 @@ async fn scan(id: Path<StationId>, srv: GameState, req: HttpRequest) -> impl Res
 }
 
 // List all the modules available to buy on the station
-#[get("/station/{station_id}/shop/modules")]
+#[web::get("/station/{station_id}/shop/modules")]
 async fn get_prices_ship_module(
     srv: GameState,
     id: Path<StationId>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let player = get_player!(srv, req);
     let _station = get_station!(srv, player, id.as_ref()); // Ensure it exists
 
@@ -541,12 +541,12 @@ async fn get_prices_ship_module(
 }
 
 // Buy a ship module and install it on a ship
-#[get("/station/{station_id}/shop/modules/{ship_id}/buy/{modtype}")]
+#[web::get("/station/{station_id}/shop/modules/{ship_id}/buy/{modtype}")]
 async fn buy_ship_module(
     srv: GameState,
     args: Path<(StationId, ShipId, String)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id, modtype) = args.as_ref();
     let Ok(modtype) = ShipModuleType::from_str(modtype.as_str()) else {
         return build_response(Err(Errcode::InvalidArgument("modtype")));
@@ -569,12 +569,12 @@ async fn buy_ship_module(
 }
 
 // List the available upgrades for a module on a ship
-#[get("/station/{station_id}/shop/modules/{ship_id}/upgrade")]
+#[web::get("/station/{station_id}/shop/modules/{ship_id}/upgrade")]
 async fn get_ship_module_upgrade_prices(
     srv: GameState,
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -605,12 +605,12 @@ async fn get_ship_module_upgrade_prices(
 }
 
 // Buy an upgrade for a module installed on a ship, the level of a module will affect the extraction rate for a resource, as well as what kind of resources it kind mine.
-#[get("/station/{station_id}/shop/modules/{ship_id}/upgrade/{modid}")]
+#[web::get("/station/{station_id}/shop/modules/{ship_id}/upgrade/{modid}")]
 async fn buy_ship_module_upgrade(
     srv: GameState,
     args: Path<(StationId, ShipId, ShipModuleId)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id, mod_id) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -628,12 +628,12 @@ async fn buy_ship_module_upgrade(
 }
 
 // Buy a storage expansion for the station
-#[get("/station/{station_id}/shop/cargo/buy/{amount}")]
+#[web::get("/station/{station_id}/shop/cargo/buy/{amount}")]
 async fn buy_station_cargo(
     srv: GameState,
     args: Path<(StationId, usize)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (id, amnt) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -647,12 +647,12 @@ async fn buy_station_cargo(
 }
 
 // List the upgrades for a station currently available
-#[get("/station/{station_id}/upgrades")]
+#[web::get("/station/{station_id}/upgrades")]
 async fn get_station_upgrades(
     srv: GameState,
     id: Path<StationId>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let player = get_player!(srv, req);
     let player = player.read().await;
     let station = get_station!(srv, id.as_ref(); player);
@@ -667,12 +667,12 @@ async fn get_station_upgrades(
 }
 
 // Use fuel in storage on the station to refuel the ship
-#[get("/station/{station_id}/refuel/{ship_id}")]
+#[web::get("/station/{station_id}/refuel/{ship_id}")]
 async fn refuel_ship(
     srv: GameState,
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -690,12 +690,12 @@ async fn refuel_ship(
 }
 
 // Use the hull plates in storage on the station to repair the ship
-#[get("/station/{station_id}/repair/{ship_id}")]
+#[web::get("/station/{station_id}/repair/{ship_id}")]
 async fn repair_ship(
     srv: GameState,
     args: Path<(StationId, ShipId)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, ship_id) = args.as_ref();
     let player = get_player!(srv, req);
     let mut player = player.write().await;
@@ -711,8 +711,12 @@ async fn repair_ship(
     build_response(res.map(|v| json!({"added-hull": v})))
 }
 
-#[get("/ship/{ship_id}")]
-async fn get_ship_status(srv: GameState, id: Path<ShipId>, req: HttpRequest) -> impl Responder {
+#[web::get("/ship/{ship_id}")]
+async fn get_ship_status(
+    srv: GameState,
+    id: Path<ShipId>,
+    req: HttpRequest,
+) -> impl web::Responder {
     let player = get_player!(srv, req);
     let player = player.read().await;
 
@@ -723,12 +727,12 @@ async fn get_ship_status(srv: GameState, id: Path<ShipId>, req: HttpRequest) -> 
 }
 
 // Compute how much will cost a travel to a specific position (X, Y, Z)
-#[get("/ship/{ship_id}/travelcost/{x}/{y}/{z}")]
+#[web::get("/ship/{ship_id}/travelcost/{x}/{y}/{z}")]
 async fn compute_travel_costs(
     srv: GameState,
     args: Path<(ShipId, SpaceUnit, SpaceUnit, SpaceUnit)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (id, x, y, z) = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -742,12 +746,12 @@ async fn compute_travel_costs(
 }
 
 // Navigate to position (X, Y, Z), ship will have the state InFlight during the travel
-#[get("/ship/{ship_id}/navigate/{x}/{y}/{z}")]
+#[web::get("/ship/{ship_id}/navigate/{x}/{y}/{z}")]
 async fn ask_navigate(
     srv: GameState,
     args: Path<(ShipId, SpaceUnit, SpaceUnit, SpaceUnit)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (id, x, y, z) = args.as_ref();
     let coord = (*x, *y, *z);
 
@@ -762,8 +766,12 @@ async fn ask_navigate(
 }
 
 // Stop the naviguation, ship will become Idle, and stay in place
-#[get("/ship/{ship_id}/navigation/stop")]
-async fn stop_navigation(srv: GameState, args: Path<ShipId>, req: HttpRequest) -> impl Responder {
+#[web::get("/ship/{ship_id}/navigation/stop")]
+async fn stop_navigation(
+    srv: GameState,
+    args: Path<ShipId>,
+    req: HttpRequest,
+) -> impl web::Responder {
     let id = args.as_ref();
 
     let player = get_player!(srv, req);
@@ -777,8 +785,12 @@ async fn stop_navigation(srv: GameState, args: Path<ShipId>, req: HttpRequest) -
 }
 
 // Start the extraction of resources on the planet, ship will have the state "Extracting" until its cargo is full
-#[get("/ship/{ship_id}/extraction/start")]
-async fn start_extraction(srv: GameState, id: Path<ShipId>, req: HttpRequest) -> impl Responder {
+#[web::get("/ship/{ship_id}/extraction/start")]
+async fn start_extraction(
+    srv: GameState,
+    id: Path<ShipId>,
+    req: HttpRequest,
+) -> impl web::Responder {
     let player = get_player!(srv, req);
     let mut player = player.write().await;
     let Some(ship) = player.ships.get_mut(id.as_ref()) else {
@@ -790,8 +802,12 @@ async fn start_extraction(srv: GameState, id: Path<ShipId>, req: HttpRequest) ->
 }
 
 // Stop the extraction of resources on the planet
-#[get("/ship/{ship_id}/extraction/stop")]
-async fn stop_extraction(srv: GameState, id: Path<ShipId>, req: HttpRequest) -> impl Responder {
+#[web::get("/ship/{ship_id}/extraction/stop")]
+async fn stop_extraction(
+    srv: GameState,
+    id: Path<ShipId>,
+    req: HttpRequest,
+) -> impl web::Responder {
     let player = get_player!(srv, req);
     let mut player = player.write().await;
 
@@ -804,12 +820,12 @@ async fn stop_extraction(srv: GameState, id: Path<ShipId>, req: HttpRequest) -> 
 }
 
 // Unload a specific amount of a specific resource on the station's storage
-#[get("/ship/{ship_id}/unload/{resource}/{amount}")]
+#[web::get("/ship/{ship_id}/unload/{resource}/{amount}")]
 async fn unload_ship_cargo(
     srv: GameState,
     args: Path<(ShipId, String, f64)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (id, resource, amnt) = args.as_ref();
 
     let Ok(resource) = Resource::from_str(resource) else {
@@ -851,20 +867,20 @@ async fn unload_ship_cargo(
 }
 
 // Get prices of each resources on the market
-#[get("/market/prices")]
-async fn get_market_prices(srv: GameState) -> impl Responder {
+#[web::get("/market/prices")]
+async fn get_market_prices(srv: GameState) -> impl web::Responder {
     let market = srv.market.read().await;
     let res = to_value(&market.prices).unwrap();
     build_response(Ok(res))
 }
 
 // Buy a specific resource on the market
-#[get("/market/{station_id}/buy/{resource}/{amnt}")]
+#[web::get("/market/{station_id}/buy/{resource}/{amnt}")]
 async fn buy_resource(
     srv: GameState,
     args: Path<(StationId, String, f64)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, resource, amnt) = args.as_ref();
     let Ok(resource) = Resource::from_str(resource) else {
         return build_response(Err(Errcode::InvalidArgument("resource")));
@@ -884,12 +900,12 @@ async fn buy_resource(
 }
 
 // Sell a specific resource on the market
-#[get("/market/{station_id}/sell/{resource}/{amnt}")]
+#[web::get("/market/{station_id}/sell/{resource}/{amnt}")]
 async fn sell_resource(
     srv: GameState,
     args: Path<(StationId, String, f64)>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let (station_id, resource, amnt) = args.as_ref();
     let Ok(resource) = Resource::from_str(resource) else {
         return build_response(Err(Errcode::InvalidArgument("resource")));
@@ -909,12 +925,12 @@ async fn sell_resource(
 }
 
 // Get the fee rate applied on the market of a station, depends on the level of the trader
-#[get("/market/{station_id}/fee_rate")]
+#[web::get("/market/{station_id}/fee_rate")]
 async fn get_fee_rate(
     srv: GameState,
     station_id: Path<StationId>,
     req: HttpRequest,
-) -> impl Responder {
+) -> impl web::Responder {
     let player = get_player!(srv, req);
     let player = player.read().await;
     let station = get_station!(srv, station_id.as_ref(); player);
@@ -925,8 +941,8 @@ async fn get_fee_rate(
 
 #[cfg(feature = "testing")]
 // Make the server tick a single time
-#[get("/tick")]
-async fn tick_server(srv: GameState) -> impl Responder {
+#[web::get("/tick")]
+async fn tick_server(srv: GameState) -> impl web::Responder {
     let Ok(_) = srv.send_sig.send(simeis_data::game::GameSignal::Tick).await else {
         return build_response(Err(Errcode::GameSignalSend));
     };
@@ -935,8 +951,8 @@ async fn tick_server(srv: GameState) -> impl Responder {
 
 #[cfg(feature = "testing")]
 // Make the server tick N times
-#[get("/tick/{n}")]
-async fn tick_server_n(srv: GameState, n: Path<usize>) -> impl Responder {
+#[web::get("/tick/{n}")]
+async fn tick_server_n(srv: GameState, n: Path<usize>) -> impl web::Responder {
     let n = n.as_ref().clone();
     for _ in 0..n {
         let Ok(_) = srv.send_sig.send(simeis_data::game::GameSignal::Tick).await else {
@@ -947,8 +963,8 @@ async fn tick_server_n(srv: GameState, n: Path<usize>) -> impl Responder {
 }
 
 // Get informations on all the resources on game
-#[get("/resources")]
-async fn resources_info() -> impl Responder {
+#[web::get("/resources")]
+async fn resources_info() -> impl web::Responder {
     let mut data = BTreeMap::new();
     for res in Resource::iter() {
         if res.mineable(u8::MAX) || res.suckable(u8::MAX) {
@@ -976,8 +992,8 @@ async fn resources_info() -> impl Responder {
 }
 
 // Get the stats of the game, about all players
-#[get("/gamestats")]
-async fn gamestats(srv: GameState) -> impl Responder {
+#[web::get("/gamestats")]
+async fn gamestats(srv: GameState) -> impl web::Responder {
     let mut data = BTreeMap::new();
     let all_players = srv.players.get_all_keys().await;
     let mut players = vec![];
@@ -1017,8 +1033,8 @@ async fn gamestats(srv: GameState) -> impl Responder {
 }
 
 // Get the version of the game
-#[get("/version")]
-async fn get_version() -> impl Responder {
+#[web::get("/version")]
+async fn get_version() -> impl web::Responder {
     let v = env!("CARGO_PKG_VERSION");
     build_response(Ok(json!({"version": v})))
 }

@@ -1,15 +1,15 @@
 #![allow(unexpected_cfgs)]
-use actix_web::{middleware::Logger, web::Data};
+use ntex::web;
 
 use simeis_data::game::{Game, GameSignal};
 
 mod api;
 
-pub type GameState = actix_web::web::Data<Game>;
+pub type GameState = ntex::web::types::State<Game>;
 
-#[actix_web::main]
+#[ntex::main]
 async fn main() -> std::io::Result<()> {
-    console_subscriber::init();
+    // console_subscriber::init();
 
     #[cfg(not(feature = "testing"))]
     let port = 8080;
@@ -19,31 +19,30 @@ async fn main() -> std::io::Result<()> {
 
     env_logger::builder()
         .parse_default_env()
-        .filter_module("actix_web_server", log::LevelFilter::Warn)
-        .filter_module("actix_web_io", log::LevelFilter::Warn)
-        .filter_module("actix_web_rt", log::LevelFilter::Warn)
-        .filter_module("actix_web::http::h1", log::LevelFilter::Warn)
+        .filter_module("ntex_server", log::LevelFilter::Warn)
+        .filter_module("ntex_io", log::LevelFilter::Warn)
+        .filter_module("ntex_rt", log::LevelFilter::Warn)
+        .filter_module("ntex::http::h1", log::LevelFilter::Warn)
         .init();
 
     log::info!("Running on http://0.0.0.0:{port}");
     let (gamethread, state) = Game::init().await;
-    let game_state = Data::new(state.clone());
+    let stop_state = state.clone();
 
-    let res = actix_web::HttpServer::new(move || {
-        actix_web::App::new()
-            .wrap(Logger::default())
-            .app_data(game_state.clone())
+    let res = web::HttpServer::new(async move || {
+        let game_state = state.clone();
+        web::App::new()
+            .middleware(web::middleware::Logger::default())
+            .state(game_state)
             .configure(api::configure)
     })
-    // .workers(64)
-    .max_connection_rate(10240)
-    .worker_max_blocking_threads(2048)
+    // .stop_runtime()
     .bind(("0.0.0.0", port))?
     .run()
     .await;
 
     log::info!("Server stopped, stopping game thread");
-    state.send_sig.send(GameSignal::Stop).await.unwrap();
+    stop_state.send_sig.send(GameSignal::Stop).await.unwrap();
     gamethread.await.unwrap();
     res
 }
