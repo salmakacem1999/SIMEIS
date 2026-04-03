@@ -1554,7 +1554,7 @@ checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
 
 [[package]]
 name = "simeis-data"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64",
  "compio",
@@ -1570,7 +1570,7 @@ dependencies = [
 
 [[package]]
 name = "simeis-server"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64",
  "compio",
