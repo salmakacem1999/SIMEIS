@@ -31,6 +31,8 @@ async fn main() -> std::io::Result<()> {
 
     // TODO FIXME Quand worker > 1, et beaucoup de players, je finir par avoir un deadlock
     //     Possiblement dû au register de nouveau joueurs
+    //     Quand je fais le bigtest avec 1 seconde entre chaque, tout va bien
+    //     Problème dans l'accession aux stations, peut-être du à l'Arc dans le player
     let res = web::HttpServer::new(async move || {
         let game_state = state.clone();
         web::App::new()

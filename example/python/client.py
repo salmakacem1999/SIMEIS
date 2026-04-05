@@ -7,7 +7,7 @@ class Game:
 
     def gameloop(self):
         status = self.sdk.get_player_status()
-        sta = list(status["stations"].keys())[0]
+        sta = status["stations"][0]
 
         # On a besoin de savoir quelle planète miner pour équiper notre vaisseau
         nearest_planet = self.sdk.scan_planets(sta)[0]

@@ -85,7 +85,8 @@ impl SyslogSend {
 
     pub async fn event(&self, player: &PlayerId, evt: SyslogEvent) {
         let ns = self.tstart.elapsed().as_secs_f64();
-        self.sender.send((*player, ns, evt)).await.unwrap();
+        // TODO FIXME DEADLOCK May cause deadlock on player creation
+        // self.sender.send((*player, ns, evt)).await.unwrap();
     }
 }
 

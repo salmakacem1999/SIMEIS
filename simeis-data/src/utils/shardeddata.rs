@@ -28,6 +28,11 @@ impl<K: ShardDataKey, T> ShardedLockedData<K, T> {
         self.shards.get(idx).unwrap()
     }
 
+    pub async fn contains_key(&self, key: &K) -> bool {
+        let shard = self.get_shard(key);
+        shard.read().await.contains_key(key)
+    }
+
     pub async fn insert(&self, key: K, val: T) -> Option<T> {
         let shard = self.get_shard(&key);
         shard.write().await.insert(key, val)
@@ -86,6 +91,13 @@ impl ShardDataKey for u32 {
     }
 }
 
+impl ShardDataKey for u64 {
+    fn get_shard_idx(&self, totcap: usize) -> usize {
+        let sep = (u64::MAX as usize) / totcap;
+        (*self as usize) / sep
+    }
+}
+
 impl ShardDataKey for crate::player::PlayerKey {
     fn get_shard_idx(&self, totcap: usize) -> usize {
         let mut h = std::hash::DefaultHasher::new();
@@ -93,5 +105,17 @@ impl ShardDataKey for crate::player::PlayerKey {
         let n = h.finish() as usize;
         let sep = usize::MAX / totcap;
         n / sep
+    }
+}
+
+impl ShardDataKey for String {
+    fn get_shard_idx(&self, totcap: usize) -> usize {
+        let mut h = std::hash::DefaultHasher::new();
+        h.write(self.as_bytes());
+        let n = h.finish() as usize;
+        let sep = usize::MAX / totcap;
+        let res = n / sep;
+        log::debug!("shard data key {self} = {res} (totcap {totcap})");
+        res
     }
 }

@@ -4,7 +4,6 @@ use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;
 
-use mea::rwlock::RwLock;
 use rand::Rng;
 
 use crate::crew::CrewId;
@@ -18,7 +17,7 @@ use crate::syslog::{SyslogEvent, SyslogRecv};
 
 const INIT_MONEY: f64 = 72000.0;
 
-pub type PlayerId = u16;
+pub type PlayerId = u64;
 pub type PlayerKey = [u8; 128];
 
 // Game state for a single player
@@ -33,12 +32,12 @@ pub struct Player {
     pub money: f64,
     pub costs: f64,
 
-    pub stations: BTreeMap<StationId, Arc<RwLock<Station>>>,
+    pub stations: BTreeMap<StationId, Arc<Station>>,
     pub ships: BTreeMap<ShipId, Ship>,
 }
 
 impl Player {
-    pub fn new(station: (StationId, Arc<RwLock<Station>>), name: String) -> Player {
+    pub fn new(initstation: (StationId, Arc<Station>), name: String) -> Player {
         let mut hasher = DefaultHasher::new();
         hasher.write(name.as_bytes());
         let mut rng = rand::rng();
@@ -53,11 +52,11 @@ impl Player {
             money *= 10000.0;
         }
         let mut stations = BTreeMap::new();
-        stations.insert(station.0, station.1);
+        stations.insert(initstation.0, initstation.1);
         Player {
             created: Instant::now(),
             key: randbytes,
-            id: (hasher.finish() % (PlayerId::MAX as u64)) as PlayerId,
+            id: hasher.finish(),
             lost: false,
 
             money,
@@ -79,7 +78,7 @@ impl Player {
     }
 
     #[inline]
-    pub async fn ship_in_station(
+    pub fn ship_in_station(
         &self,
         ship: &ShipId,
         station: &StationId,
@@ -88,19 +87,16 @@ impl Player {
         let Some(station) = self.stations.get(station) else {
             return Err(Errcode::NoSuchStation(*station));
         };
-        let stationpos = station.read().await.position;
-        Ok(ship.position == stationpos)
+        Ok(ship.position == station.position)
     }
 
     //// Interfaces for game
 
-    // SAFETY Will deadlock if a &mut station exists when this is called
     pub async fn update_costs(&mut self) {
         self.costs = 0.0;
 
         for station in self.stations.values() {
             // Deadlock because of this
-            let station = station.read().await;
             self.costs += station.sum_all_wages(&self.id).await;
         }
         self.costs += self
@@ -134,11 +130,11 @@ impl Player {
         let Some(station) = self.stations.get(station_id) else {
             return Err(Errcode::NoSuchStation(*station_id));
         };
-        let mut station = station.write().await;
 
         let ship_opt = {
             let mut data = None;
-            for (n, ship) in station.shipyard.iter().enumerate() {
+            let shipyard = station.shipyard.read().await;
+            for (n, ship) in shipyard.iter().enumerate() {
                 if &ship.id == ship_id {
                     data = Some((n, ship.compute_price()));
                 }
@@ -154,7 +150,7 @@ impl Player {
             return Err(Errcode::NotEnoughMoney(self.money, price));
         }
 
-        let mut ship = station.buy_ship(index);
+        let mut ship = station.buy_ship(index).await;
         let ship_id = ship.id;
         ship.owner = self.id;
         self.money -= price;
@@ -168,7 +164,7 @@ impl Player {
         ship_id: &ShipId,
         modtype: ShipModuleType,
     ) -> Result<ShipModuleId, Errcode> {
-        if !self.ship_in_station(ship_id, station_id).await? {
+        if !self.ship_in_station(ship_id, station_id)? {
             return Err(Errcode::ShipNotInStation);
         }
         let ship = self.ships.get_mut(ship_id).unwrap();
@@ -196,7 +192,6 @@ impl Player {
         let Some(station) = self.stations.get(station).cloned() else {
             return Err(Errcode::NoSuchStation(*station));
         };
-        let station = station.write().await;
 
         let price = station.get_ship_upgrade_price(ship, upgrade);
         if price > self.money {
@@ -214,7 +209,7 @@ impl Player {
         ship_id: &ShipId,
         mod_id: &ShipModuleId,
     ) -> Result<(f64, u8), Errcode> {
-        if !self.ship_in_station(ship_id, station_id).await? {
+        if !self.ship_in_station(ship_id, station_id)? {
             return Err(Errcode::ShipNotInStation);
         }
         // SAFETY Checked on the function above
@@ -239,7 +234,7 @@ impl Player {
         ship_id: &ShipId,
         crew_id: &CrewId,
     ) -> Result<(f64, u8), Errcode> {
-        if !self.ship_in_station(ship_id, station_id).await? {
+        if !self.ship_in_station(ship_id, station_id)? {
             return Err(Errcode::ShipNotInStation);
         };
         // SAFETY Checked in function above
@@ -270,11 +265,9 @@ impl Player {
         let Some(station) = self.stations.get(station_id) else {
             return Err(Errcode::NoSuchStation(*station_id));
         };
-        let mut station = station.write().await;
         let res = station
             .upgrade_station_crew(&self.id, &mut self.money, crew_id)
             .await;
-        drop(station);
         match res {
             Ok(v) => {
                 self.update_costs().await;
@@ -292,7 +285,6 @@ impl Player {
         let Some(station) = self.stations.get_mut(station_id) else {
             return Err(Errcode::NoSuchStation(*station_id));
         };
-        let mut station = station.write().await;
         let cost = (amnt as f64) * station.cargo_price(&self.id).await;
         if cost > self.money {
             return Err(Errcode::NotEnoughMoney(self.money, cost));

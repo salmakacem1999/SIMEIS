@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use mea::rwlock::RwLock;
 use rand::RngExt;
@@ -13,6 +13,7 @@ use crate::ship::module::ShipModuleId;
 use crate::ship::resources::Resource;
 use crate::ship::upgrade::ShipUpgrade;
 use crate::ship::Ship;
+use crate::utils::ShardedLockedData;
 
 use super::scan::ScanResult;
 use super::{Galaxy, SpaceCoord};
@@ -57,13 +58,21 @@ impl StationPlayerData {
     }
 }
 
-#[derive(Debug)]
 pub struct Station {
     pub id: StationId,
     pub position: SpaceCoord,
-    pub shipyard: Vec<Ship>,
+    pub shipyard: RwLock<Vec<Ship>>,
 
-    pub player_data: BTreeMap<PlayerId, RwLock<StationPlayerData>>,
+    pub player_data: ShardedLockedData<PlayerId, Arc<RwLock<StationPlayerData>>>,
+}
+
+impl std::fmt::Debug for Station {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Station")
+            .field("id", &self.id)
+            .field("position", &self.position)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Station {
@@ -71,8 +80,8 @@ impl Station {
         Station {
             id,
             position,
-            shipyard: Ship::init_shipyard(position),
-            player_data: BTreeMap::new(),
+            shipyard: RwLock::new(Ship::init_shipyard(position)),
+            player_data: ShardedLockedData::new(100),
         }
     }
 
@@ -82,7 +91,7 @@ impl Station {
     }
 
     pub async fn cargo_price(&self, player: &PlayerId) -> f64 {
-        let cap = if let Some(data) = self.player_data.get(player) {
+        let cap = if let Some(data) = self.player_data.clone_val(player).await {
             data.read().await.cargo.capacity
         } else {
             STATION_INIT_CARGO
@@ -91,7 +100,7 @@ impl Station {
     }
 
     pub async fn buy_cargo(
-        &mut self,
+        &self,
         player: &mut Player,
         amnt: &usize,
     ) -> Result<ShipCargo, Errcode> {
@@ -101,21 +110,24 @@ impl Station {
         }
         player.money -= cost;
         self.ensure_has_player_data(&player.id).await;
-        let mut pd = self.player_data.get(&player.id).unwrap().write().await;
+        let pd = self.player_data.clone_val(&player.id).await.unwrap();
+        let mut pd = pd.write().await;
         pd.cargo.capacity += *amnt as f64;
         Ok(pd.cargo.clone())
     }
 
-    pub async fn add_cargo_cap(&mut self, player: &PlayerId, amnt: usize) -> ShipCargo {
+    pub async fn add_cargo_cap(&self, player: &PlayerId, amnt: usize) -> ShipCargo {
         self.ensure_has_player_data(player).await;
-        let mut pd = self.player_data.get(player).unwrap().write().await;
+        let pd = self.player_data.clone_val(player).await.unwrap();
+        let mut pd = pd.write().await;
         pd.cargo.capacity += amnt as f64;
         pd.cargo.clone()
     }
 
-    pub async fn assign_trader(&mut self, pid: &PlayerId, id: CrewId) -> Result<(), Errcode> {
+    pub async fn assign_trader(&self, pid: &PlayerId, id: CrewId) -> Result<(), Errcode> {
         self.ensure_has_player_data(pid).await;
-        let mut pd = self.player_data.get(pid).unwrap().write().await;
+        let pd = self.player_data.clone_val(&pid).await.unwrap();
+        let mut pd = pd.write().await;
         let Some(cm) = pd.idle_crew.0.remove(&id) else {
             return Err(Errcode::CrewMemberNotIdle(id));
         };
@@ -125,9 +137,10 @@ impl Station {
         Ok(())
     }
 
-    pub async fn onboard_pilot(&mut self, ship: &mut Ship, id: &CrewId) -> Result<(), Errcode> {
+    pub async fn onboard_pilot(&self, ship: &mut Ship, id: &CrewId) -> Result<(), Errcode> {
         self.ensure_has_player_data(&ship.owner).await;
-        let mut pd = self.player_data.get(&ship.owner).unwrap().write().await;
+        let pd = self.player_data.clone_val(&ship.owner).await.unwrap();
+        let mut pd = pd.write().await;
         let Some(cm) = pd.idle_crew.0.get(id) else {
             return Err(Errcode::CrewMemberNotIdle(*id));
         };
@@ -142,7 +155,7 @@ impl Station {
     }
 
     pub async fn onboard_operator(
-        &mut self,
+        &self,
         ship: &mut Ship,
         id: &CrewId,
         mod_id: &ShipModuleId,
@@ -161,19 +174,21 @@ impl Station {
             return Err(Errcode::CrewNotNeeded);
         }
         module.operator = Some(*id);
-        let mut pd = self.player_data.get(&ship.owner).unwrap().write().await;
+        let pd = self.player_data.clone_val(&ship.owner).await.unwrap();
+        let mut pd = pd.write().await;
         ship.crew.0.insert(*id, pd.idle_crew.0.remove(id).unwrap());
         Ok(())
     }
 
     pub async fn get_idle_crew(
-        &mut self,
+        &self,
         pid: &PlayerId,
         id: &CrewId,
         ctype: CrewMemberType,
     ) -> Result<CrewMember, Errcode> {
         self.ensure_has_player_data(pid).await;
-        let pd = self.player_data.get(pid).unwrap().write().await;
+        let pd = self.player_data.clone_val(pid).await.unwrap();
+        let pd = pd.read().await;
         let Some(cm) = pd.idle_crew.0.get(id) else {
             return Err(Errcode::CrewMemberNotIdle(*id));
         };
@@ -184,14 +199,15 @@ impl Station {
     }
 
     pub async fn buy_resource(
-        &mut self,
+        &self,
         market: &Market,
         player: &PlayerId,
         resource: &Resource,
         amnt: f64,
     ) -> Result<MarketTx, Errcode> {
         self.ensure_has_player_data(player).await;
-        let mut pd = self.player_data.get(player).unwrap().write().await;
+        let pd = self.player_data.clone_val(player).await.unwrap();
+        let mut pd = pd.write().await;
         let Some(trader) = pd.trader else {
             return Err(Errcode::NoTraderAssigned);
         };
@@ -208,14 +224,15 @@ impl Station {
     }
 
     pub async fn sell_resource(
-        &mut self,
+        &self,
         market: &Market,
         player: &PlayerId,
         resource: &Resource,
         amnt: f64,
     ) -> Result<MarketTx, Errcode> {
         self.ensure_has_player_data(player).await;
-        let mut pd = self.player_data.get(player).unwrap().write().await;
+        let pd = self.player_data.clone_val(player).await.unwrap();
+        let mut pd = pd.write().await;
         let Some(trader) = pd.trader else {
             return Err(Errcode::NoTraderAssigned);
         };
@@ -234,11 +251,11 @@ impl Station {
         Ok(tx)
     }
 
-    pub async fn refuel_ship(&mut self, ship: &mut Ship) -> Result<f64, Errcode> {
+    pub async fn refuel_ship(&self, ship: &mut Ship) -> Result<f64, Errcode> {
         if self.position != ship.position {
             return Err(Errcode::ShipNotInStation);
         }
-        let Some(pd) = self.player_data.get(&ship.owner) else {
+        let Some(pd) = self.player_data.clone_val(&ship.owner).await else {
             return Err(Errcode::NoFuelInCargo);
         };
         let mut pd = pd.write().await;
@@ -258,11 +275,11 @@ impl Station {
         Ok(unloaded)
     }
 
-    pub async fn repair_ship(&mut self, ship: &mut Ship) -> Result<f64, Errcode> {
+    pub async fn repair_ship(&self, ship: &mut Ship) -> Result<f64, Errcode> {
         if self.position != ship.position {
             return Err(Errcode::ShipNotInStation);
         }
-        let Some(pd) = self.player_data.get(&ship.owner) else {
+        let Some(pd) = self.player_data.clone_val(&ship.owner).await else {
             return Err(Errcode::NoHullPlateInCargo);
         };
         let mut pd = pd.write().await;
@@ -298,11 +315,11 @@ impl Station {
     }
 
     pub async fn get_cargo_potential_price(&self, id: &PlayerId) -> f64 {
-        let Some(pd) = self.player_data.get(id) else {
+        let Some(pd) = self.player_data.clone_val(id).await else {
             return 0.0;
         };
-        pd.read()
-            .await
+        let pd = pd.read().await;
+        pd
             .cargo
             .resources
             .iter()
@@ -310,19 +327,22 @@ impl Station {
             .sum()
     }
 
-    pub async fn add_resource(&mut self, id: &PlayerId, resource: &Resource, amnt: f64) -> f64 {
+    pub async fn add_resource(&self, id: &PlayerId, resource: &Resource, amnt: f64) -> f64 {
         self.ensure_has_player_data(id).await;
-        let mut pd = self.player_data.get(id).unwrap().write().await;
+        let pd = self.player_data.clone_val(id).await.unwrap();
+        let mut pd = pd.write().await;
         pd.cargo.add_resource(resource, amnt)
     }
 
-    pub fn buy_ship(&mut self, index: usize) -> Ship {
+    pub async fn buy_ship(&self, index: usize) -> Ship {
         // Ship starters, always keep them
         let mut ship = if index < 3 {
-            self.shipyard.get(index).unwrap().clone()
+            let shipyard = self.shipyard.read().await;
+            shipyard.get(index).unwrap().clone()
         } else {
-            let ship = self.shipyard.remove(index);
-            self.shipyard.push(Ship::random(self.position));
+            let mut shipyard = self.shipyard.write().await;
+            let ship = shipyard.remove(index);
+            shipyard.push(Ship::random(self.position));
             ship
         };
         ship.update_perf_stats();
@@ -330,15 +350,15 @@ impl Station {
         ship
     }
 
-    pub async fn ensure_has_player_data(&mut self, id: &PlayerId) {
-        if !self.player_data.contains_key(id) {
-            self.player_data
-                .insert(*id, RwLock::new(StationPlayerData::new()));
+    pub async fn ensure_has_player_data(&self, id: &PlayerId) {
+        if !self.player_data.contains_key(id).await {
+            let pd = Arc::new(RwLock::new(StationPlayerData::new()));
+            self.player_data.insert(*id, pd).await;
         }
     }
 
     pub async fn sum_all_wages(&self, id: &PlayerId) -> f64 {
-        let Some(pd) = self.player_data.get(id) else {
+        let Some(pd) = self.player_data.clone_val(id).await else {
             return 0.0;
         };
         let pd = pd.read().await;
@@ -346,12 +366,12 @@ impl Station {
     }
 
     pub async fn upgrade_station_crew(
-        &mut self,
+        &self,
         id: &PlayerId,
         money: &mut f64,
         crew: &CrewId,
     ) -> Result<(f64, u8), Errcode> {
-        let Some(pd) = self.player_data.get(id) else {
+        let Some(pd) = self.player_data.clone_val(id).await else {
             return Err(Errcode::CrewMemberNotFound(*crew));
         };
         let mut pd = pd.write().await;
@@ -368,18 +388,19 @@ impl Station {
         Ok((price, cm.rank))
     }
 
-    pub async fn hire_crew(&mut self, id: &PlayerId, crewtype: CrewMemberType) -> CrewId {
+    pub async fn hire_crew(&self, id: &PlayerId, crewtype: CrewMemberType) -> CrewId {
         let crewid = rand::rng().random();
         let member = CrewMember::from(crewtype);
 
         self.ensure_has_player_data(id).await;
-        let mut pd = self.player_data.get(id).unwrap().write().await;
+        let pd = self.player_data.clone_val(id).await.unwrap();
+        let mut pd = pd.write().await;
         pd.idle_crew.0.insert(crewid, member);
         crewid
     }
 
     pub async fn upgr_trader_price(&self, id: &PlayerId) -> Option<f64> {
-        let pd = self.player_data.get(id)?;
+        let pd = self.player_data.clone_val(id).await?;
         let pd = pd.read().await;
         pd.trader.map(|trader| {
             let cm = pd.crew.0.get(&trader).unwrap();
@@ -388,14 +409,15 @@ impl Station {
     }
 
     pub async fn clone_cargo(&self, id: &PlayerId) -> ShipCargo {
-        let Some(pd) = self.player_data.get(id) else {
+        let Some(pd) = self.player_data.clone_val(id).await else {
             return ShipCargo::with_capacity(STATION_INIT_CARGO);
         };
-        pd.read().await.cargo.clone()
+        let pd = pd.read().await;
+        pd.cargo.clone()
     }
 
     pub async fn get_fee_rate(&self, id: &PlayerId) -> Result<f64, Errcode> {
-        let Some(pd) = self.player_data.get(id) else {
+        let Some(pd) = self.player_data.clone_val(id).await else {
             return Err(Errcode::NoTraderAssigned);
         };
         let pd = pd.read().await;
@@ -407,7 +429,7 @@ impl Station {
     }
 
     pub async fn to_json(&self, id: &PlayerId) -> serde_json::Value {
-        if let Some(pd) = self.player_data.get(id) {
+        if let Some(pd) = self.player_data.clone_val(id).await {
             let pd = pd.read().await;
             self._to_json(&pd)
         } else {

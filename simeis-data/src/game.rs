@@ -9,7 +9,6 @@
 // - SyslogFifo
 // - PlayerFifo
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -52,10 +51,10 @@ pub struct Game {
     // Locked
     pub players: Arc<ShardedLockedData<PlayerId, Arc<RwLock<Player>>>>,
     pub player_index: Arc<ShardedLockedData<PlayerKey, PlayerId>>,
-    pub taken_names: Arc<RwLock<Vec<String>>>,
+    pub taken_names: Arc<ShardedLockedData<String, PlayerId>>,
     pub galaxy: Arc<RwLock<Galaxy>>,
 
-    pub init_station: (StationId, Arc<RwLock<Station>>),
+    pub init_station: (StationId, Arc<Station>),
     pub market: Arc<Market>,
     pub syslog: SyslogSend,
     pub fifo_events: SyslogFifo,
@@ -77,7 +76,7 @@ impl Game {
             send_sig: send_stop,
             galaxy: Arc::new(RwLock::new(galaxy)),
             market: Arc::new(Market::init()),
-            taken_names: Arc::new(RwLock::new(vec![])),
+            taken_names: Arc::new(ShardedLockedData::new(100)),
             players: Arc::new(ShardedLockedData::new(100)),
             player_index: Arc::new(ShardedLockedData::new(100)),
             syslog: syssend.clone(),
@@ -198,17 +197,29 @@ impl Game {
     }
 
     pub async fn new_player(&self, name: String) -> Result<(PlayerId, String), Errcode> {
-        self.taken_names.write().await.push(name.clone());
+        log::debug!("ADD {name} START");
+        let tstart = std::time::Instant::now();
+        if self.taken_names.contains_key(&name).await {
+            return Err(Errcode::PlayerAlreadyExists(name));
+        }
+        log::debug!("ADD {name} Checked if exist {:?}", tstart.elapsed());
 
-        let player = Player::new(self.init_station.clone(), name);
+        let player = Player::new(self.init_station.clone(), name.clone());
         let pid = player.id;
+        self.taken_names.insert(name.clone(), pid).await;
+        log::debug!("ADD {name} Created player, added to exist list {:?}", tstart.elapsed());
+
         let key = BASE64_STANDARD.encode(player.key);
+        log::debug!("ADD {name} Create station, encode key {:?}", tstart.elapsed());
 
         self.player_index.insert(player.key, player.id).await;
+        log::debug!("ADD {name} added to player index {:?}", tstart.elapsed());
         self.players
             .insert(player.id, Arc::new(RwLock::new(player)))
             .await;
+        log::debug!("ADD {name} added to players btreemap {:?}", tstart.elapsed());
         self.syslog.event(&pid, SyslogEvent::GameStarted).await;
+        log::debug!("ADD {name} END -- Sent syslog {:?}", tstart.elapsed());
         Ok((pid, key))
     }
 
@@ -250,27 +261,7 @@ impl Game {
         let Some(station) = player.stations.get(id) else {
             return Err(Errcode::NoSuchStation(*id));
         };
-        let station = station.read().await;
         let data = f(&pid, &station).await;
-        data
-    }
-
-    pub async fn map_station_mut<F, T>(
-        &self,
-        pkey: &PlayerKey,
-        id: &StationId,
-        f: F,
-    ) -> Result<T, Errcode>
-    where
-        F: for<'a> FnOnce(&'a PlayerId, &'a mut Station) -> BoxFuture<'a, Result<T, Errcode>>,
-    {
-        let (pid, player) = self.get_player(pkey).await?;
-        let player = player.write().await;
-        let Some(station) = player.stations.get(id) else {
-            return Err(Errcode::NoSuchStation(*id));
-        };
-        let mut station = station.write().await;
-        let data = f(&pid, &mut station).await;
         data
     }
 
@@ -313,18 +304,17 @@ impl Game {
     {
         let (pid, player) = self.get_player(pkey).await?;
         let player = player.read().await;
-        if !player.ship_in_station(ship_id, station_id).await? {
+        if !player.ship_in_station(ship_id, station_id)? {
             return Err(Errcode::ShipNotInStation);
         }
         // SAFETY Checked in function above
         let ship = player.ships.get(ship_id).unwrap();
         let station = player.stations.get(station_id).unwrap();
-        let station = station.read().await;
         let data = f(pid, &station, ship).await;
         data
     }
 
-    pub async fn map_ship_mut_in_station_mut<F, T>(
+    pub async fn map_ship_mut_in_station<F, T>(
         &self,
         pkey: &PlayerKey,
         station_id: &StationId,
@@ -334,20 +324,19 @@ impl Game {
     where
         F: for<'a> FnOnce(
             PlayerId,
-            &'a mut Station,
+            &'a Station,
             &'a mut Ship,
         ) -> BoxFuture<'a, Result<T, Errcode>>,
     {
         let (pid, player) = self.get_player(pkey).await?;
         let mut player = player.write().await;
-        if !player.ship_in_station(ship_id, station_id).await? {
+        if !player.ship_in_station(ship_id, station_id)? {
             return Err(Errcode::ShipNotInStation);
         }
         // SAFETY Checked in function above
         let station = player.stations.get(station_id).unwrap().clone();
         let ship = player.ships.get_mut(ship_id).unwrap();
-        let mut station = station.write().await;
-        let data = f(pid, &mut station, ship).await;
+        let data = f(pid, &station, ship).await;
         data
     }
 
@@ -376,16 +365,24 @@ impl Game {
         pkey: &PlayerKey,
         id: &PlayerId,
     ) -> Result<serde_json::Value, Errcode> {
+        let tstart = std::time::Instant::now();
+        log::debug!("GET_PLAYER {id} START");
         let (pid, player) = self.get_player(pkey).await?;
+        log::debug!("GET_PLAYER {id} got rwlock {:?}", tstart.elapsed());
         let player = player.read().await;
+        log::debug!("GET_PLAYER {id} read rwlock {:?}", tstart.elapsed());
         if pid == *id {
-            let mut stations = BTreeMap::new();
-            for (id, station) in player.stations.iter() {
-                let station = station.read().await;
-                stations.insert(id, station.to_json(id).await);
-            }
+            let stations = player.stations.keys().cloned().collect::<Vec<StationId>>();
+            // let mut stations = BTreeMap::new();
+            // for (id, station) in player.stations.iter() {
+            //     let station = station.read().await;
+            //     log::debug!("GET_PLAYER {id} read station {id} {:?}", tstart.elapsed());
+            //     stations.insert(id, station.to_json(id).await);
+            // }
+            log::debug!("GET_PLAYER {id} stations finished {:?}", tstart.elapsed());
             let ships =
                 serde_json::to_value(player.ships.values().collect::<Vec<&Ship>>()).unwrap();
+            log::debug!("GET_PLAYER {id} ships got {:?}", tstart.elapsed());
             Ok(serde_json::json!({
                 "id": id,
                 "name": player.name,
@@ -395,6 +392,7 @@ impl Game {
                 "costs": player.costs,
             }))
         } else {
+            log::debug!("GET_PLAYER {id} short data {:?}", tstart.elapsed());
             Ok(serde_json::json!({
                 "id": id,
                 "name": player.name,
@@ -413,7 +411,6 @@ impl Game {
         let Some(station) = player.stations.get(station_id) else {
             return Err(Errcode::NoSuchStation(*station_id));
         };
-        let station = station.read().await;
         Ok(station.scan(&galaxy).await)
     }
 
@@ -444,11 +441,9 @@ impl Game {
         let Some(station) = player.stations.get(station_id) else {
             return Err(Errcode::NoSuchStation(*station_id));
         };
-        let mut station = station.write().await;
         let tx = station
             .buy_resource(&self.market, &player.id, resource, amnt)
             .await?;
-        drop(station);
         player.money -= tx.removed_money.unwrap();
         player.score -= tx.removed_money.unwrap();
         Ok(tx)
@@ -466,11 +461,9 @@ impl Game {
         let Some(station) = player.stations.get(station_id) else {
             return Err(Errcode::NoSuchStation(*station_id));
         };
-        let mut station = station.write().await;
         let tx = station
             .sell_resource(&self.market, &player.id, resource, amnt)
             .await?;
-        drop(station);
         player.money += tx.added_money.unwrap();
         player.score += tx.added_money.unwrap();
         Ok(tx)

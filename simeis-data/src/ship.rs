@@ -294,7 +294,7 @@ impl Ship {
         &mut self,
         resource: &Resource,
         amnt: f64,
-        station: &mut Station,
+        station: &Station,
     ) -> Result<f64, Errcode> {
         let unloaded = self.cargo.unload(resource, amnt);
         if unloaded == 0.0 {

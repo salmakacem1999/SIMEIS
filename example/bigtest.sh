@@ -8,7 +8,7 @@ NPLAYERS=$1
 mkdir -p bigtest/logs
 cd bigtest
 for i in $(seq 1 $NPLAYERS); do
-    sleep 2
+    # sleep 2
     python3 ../python/client.py "player$i" 0.0.0.0 8080 1>"./logs/$i.out" 2>"./logs/$i.err" &
     echo "Started player $i"
 done

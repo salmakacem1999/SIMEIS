@@ -119,19 +119,11 @@ async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl web::Responder {
 #[web::get("/player/new/{name}")]
 async fn new_player(srv: GameState, name: Path<String>) -> impl web::Responder {
     let name = name.to_string();
-    for pname in srv.taken_names.read().await.iter() {
-        if &name == pname {
-            return build_response(Err(Errcode::PlayerAlreadyExists(name)));
-        }
-    }
-
-    let res = srv.new_player(name).await;
-    build_response(res.map(|(id, key)| {
-        json!({
-            "playerId": id,
-            "key": key,
-        })
-    }))
+    let res = srv.new_player(name).await.map(|(id, key)| json!({
+        "playerId": id,
+        "key": key,
+    }));
+    build_response(res)
 }
 
 // Get the status from the player of a given id. If the ID is yours, give extensive metadata, else, minimal informations
@@ -143,6 +135,7 @@ async fn get_player(srv: GameState, id: Path<PlayerId>, req: HttpRequest) -> imp
     build_response(data)
 }
 
+// TODO FIXME    Deadlock here
 // Get status of a station
 #[web::get("/station/{station_id}")]
 async fn get_station_status(
@@ -173,7 +166,8 @@ async fn list_shipyard_ships(
         .map_station(&key, id, |_, station| {
             Box::pin(async {
                 let mut ships = vec![];
-                for ship in station.shipyard.iter() {
+                let shipyard = station.shipyard.read().await;
+                for ship in shipyard.iter() {
                     ships.push(json!({
                         "id": ship.id,
                         "modules": ship.modules,
@@ -284,7 +278,7 @@ async fn hire_crew(
 
     let pkey = get_player_key!(req);
     let data = srv
-        .map_station_mut(&pkey, station_id, |pid, station| {
+        .map_station(&pkey, station_id, |pid, station| {
             Box::pin(async move {
                 let id = station.hire_crew(pid, crewtype).await;
                 Ok(json!({ "id": id}))
@@ -314,7 +308,7 @@ async fn get_crew_upgrades(
     let data = srv
         .map_player(&pkey, |player| {
             Box::pin(async move {
-                if !player.ship_in_station(&ship_id, &station_id).await? {
+                if !player.ship_in_station(&ship_id, &station_id)? {
                     return Err(Errcode::ShipNotInStation);
                 }
                 // SAFETY Checked on the ship_in_station function
@@ -402,7 +396,7 @@ async fn assign_trader(
     let pkey = get_player_key!(req);
 
     let data = srv
-        .map_station_mut(&pkey, &station_id, |pid, station| {
+        .map_station(&pkey, &station_id, |pid, station| {
             Box::pin(async move {
                 station.assign_trader(pid, crew_id).await?;
                 Ok(json!({}))
@@ -423,7 +417,7 @@ async fn assign_pilot(
     let pkey = get_player_key!(req);
 
     let data = srv
-        .map_ship_mut_in_station_mut(&pkey, &station_id, &ship_id, |_, station, ship| {
+        .map_ship_mut_in_station(&pkey, &station_id, &ship_id, |_, station, ship| {
             Box::pin(async move {
                 if ship.pilot.is_some() {
                     return Err(Errcode::CrewNotNeeded);
@@ -449,7 +443,7 @@ async fn assign_operator(
     let pkey = get_player_key!(req);
 
     let data = srv
-        .map_ship_mut_in_station_mut(&pkey, &station_id, &ship_id, |_, station, ship| {
+        .map_ship_mut_in_station(&pkey, &station_id, &ship_id, |_, station, ship| {
             Box::pin(async move {
                 station
                     .onboard_operator(ship, &crew_id, &mod_id)
@@ -638,7 +632,7 @@ async fn refuel_ship(
     let (station_id, ship_id) = *args;
 
     let data = srv
-        .map_ship_mut_in_station_mut(&pkey, &station_id, &ship_id, |_, station, ship| {
+        .map_ship_mut_in_station(&pkey, &station_id, &ship_id, |_, station, ship| {
             Box::pin(async move {
                 station
                     .refuel_ship(ship)
@@ -660,7 +654,7 @@ async fn repair_ship(
     let pkey = get_player_key!(req);
     let (station_id, ship_id) = *args;
     let data = srv
-        .map_ship_mut_in_station_mut(&pkey, &station_id, &ship_id, |_, station, ship| {
+        .map_ship_mut_in_station(&pkey, &station_id, &ship_id, |_, station, ship| {
             Box::pin(async move {
                 station
                     .repair_ship(ship)
@@ -796,7 +790,7 @@ async fn unload_ship_cargo(
     let pkey = get_player_key!(req);
 
     let data = srv
-        .map_ship_mut_in_station_mut(&pkey, &station_id, &ship_id, |_, station, ship| {
+        .map_ship_mut_in_station(&pkey, &station_id, &ship_id, |_, station, ship| {
             Box::pin(async move { ship.unload_cargo(&resource, amnt, station).await })
         })
         .await;
@@ -949,7 +943,6 @@ async fn gamestats(srv: GameState) -> impl web::Responder {
         let potential = {
             let mut s = 0.0;
             for (sid, station) in player.stations.iter() {
-                let station = station.read().await;
                 let sjson = station.to_json(&pid).await;
                 all_stations.insert(*sid, sjson);
                 s += station.get_cargo_potential_price(&pid).await;

@@ -5,8 +5,6 @@ use std::sync::Arc;
 use rand::rngs::ThreadRng;
 use rand::RngExt;
 
-use mea::rwlock::RwLock;
-
 pub mod planet;
 pub mod scan;
 pub mod station;
@@ -31,7 +29,7 @@ const STATION_FPLANET_DIST: f64 = 500.0;
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum SpaceObject {
-    BaseStation(StationId, Arc<RwLock<station::Station>>),
+    BaseStation(StationId, Arc<station::Station>),
     Planet(Arc<planet::Planet>),
 }
 
@@ -122,7 +120,7 @@ impl Galaxy {
         objects
     }
 
-    pub async fn get_station(&self, coord: &SpaceCoord) -> Option<Arc<RwLock<station::Station>>> {
+    pub async fn get_station(&self, coord: &SpaceCoord) -> Option<Arc<station::Station>> {
         let obj = self.get(coord)?;
         let SpaceObject::BaseStation(_, station) = obj else {
             return None;
@@ -139,7 +137,7 @@ impl Galaxy {
     }
 
     // TODO (#6) Generate based on the galaxy
-    pub async fn init_new_station(&mut self) -> (StationId, Arc<RwLock<Station>>) {
+    pub async fn init_new_station(&mut self) -> (StationId, Arc<Station>) {
         let mut rng = rand::rng();
 
         let mut seccoord = (rng.random(), rng.random(), rng.random());
@@ -199,7 +197,7 @@ impl Galaxy {
                 panic!("Too many retries");
             }
         }
-        let station = Arc::new(RwLock::new(station::Station::init(id, coord)));
+        let station = Arc::new(station::Station::init(id, coord));
         self.insert(&coord, SpaceObject::BaseStation(id, station.clone()))
             .unwrap();
         (id, station)
