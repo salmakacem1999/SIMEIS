@@ -9,6 +9,7 @@ pub mod player;
 pub mod ship;
 pub mod syslog;
 pub mod utils;
+pub mod industry;
 
 #[cfg(test)]
 pub mod tests;

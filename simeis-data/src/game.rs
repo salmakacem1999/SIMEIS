@@ -150,6 +150,10 @@ impl Game {
             let mut player = player.write().await;
             player.update_money(syslog, ITER_PERIOD.as_secs_f64()).await;
 
+            for (_, station) in player.stations.iter() {
+                station.update_crafting(&player_id).await;
+            }
+
             let mut deadship = vec![];
             for (id, ship) in player.ships.iter_mut() {
                 match ship.state {

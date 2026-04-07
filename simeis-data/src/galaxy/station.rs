@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::crew::{Crew, CrewId, CrewMember, CrewMemberType};
 use crate::errors::Errcode;
+use crate::industry::IndustryUnit;
 use crate::market::{fee_rate, Market, MarketTx};
 use crate::player::{Player, PlayerId};
 use crate::ship::cargo::ShipCargo;
@@ -47,6 +48,7 @@ pub struct StationPlayerData {
     pub crew: Crew,
     pub trader: Option<CrewId>,
     pub cargo: ShipCargo,
+    pub industry: Vec<IndustryUnit>,
 }
 
 impl StationPlayerData {
@@ -442,5 +444,13 @@ impl Station {
             "idle_crew": data.idle_crew,
             "trader": data.trader,
         })
+    }
+
+    pub async fn update_crafting(&self, id: &PlayerId) {
+        let Some(pd) = self.player_data.clone_val(id).await else {
+            return;
+        };
+        let pd = pd.write().await;
+        // TODO 
     }
 }
