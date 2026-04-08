@@ -4,7 +4,10 @@ use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, EnumString, IntoStaticStr};
 
-use crate::{crew::{CrewId, CrewMember, CrewMemberType}, ship::resources::Resource};
+use crate::{
+    crew::{CrewId, CrewMember, CrewMemberType},
+    ship::resources::Resource,
+};
 
 pub type IndustryUnitId = u32;
 
@@ -132,16 +135,16 @@ impl IndustryUnit {
                     (Resource::Carbon, sbase * 1.25), // Solid 1
                     (Resource::Water, sbase * 0.4),   // Liquid 1
                 ]
-            },
+            }
             IndustryUnitType::SimpleHullFoundry => {
                 let sbase = SBASE_REQ * (self.rank as f64);
                 vec![
-                    (Resource::Carbon, sbase),           // Solid 1
-                    (Resource::Iron, sbase * 0.2),       // Solid 2
-                    (Resource::Hydrogen, sbase * 1.25),  // Gas 1
-                    (Resource::Water, 0.5 * 0.4),        // Liquid 1
+                    (Resource::Carbon, sbase),          // Solid 1
+                    (Resource::Iron, sbase * 0.2),      // Solid 2
+                    (Resource::Hydrogen, sbase * 1.25), // Gas 1
+                    (Resource::Water, 0.5 * 0.4),       // Liquid 1
                 ]
-            },
+            }
             IndustryUnitType::AdvancedFuelRefinery => {
                 let abase = ABASE_REQ * (self.rank as f64);
                 vec![
@@ -149,7 +152,7 @@ impl IndustryUnit {
                     (Resource::Oil, abase * 0.4),    // Liquid 3
                     (Resource::Helium, abase * 0.2), // Gas 3
                 ]
-            },
+            }
             IndustryUnitType::AdvancedHullFoundry => {
                 let abase = ABASE_REQ * (self.rank as f64);
                 vec![
@@ -161,10 +164,11 @@ impl IndustryUnit {
         }
         .into_iter()
         .map(|(res, amnt)| {
-            let amnt : f64 = amnt;
+            let amnt: f64 = amnt;
             let new_amnt = amnt.powf(div);
             (res, new_amnt)
-        }).collect()
+        })
+        .collect()
     }
 
     #[inline]
@@ -173,10 +177,22 @@ impl IndustryUnit {
         let pown = (oprank as f64).ln();
 
         match self.unittype {
-            IndustryUnitType::SimpleFuelRefinery => vec![(Resource::Fuel, get_sbase_produce_base() * (self.rank as f64))],
-            IndustryUnitType::SimpleHullFoundry => vec![(Resource::Hull, get_sbase_produce_base() * (self.rank as f64))],
-            IndustryUnitType::AdvancedFuelRefinery => vec![(Resource::Fuel, get_abase_produce_base() * (self.rank as f64))],
-            IndustryUnitType::AdvancedHullFoundry => vec![(Resource::Hull, get_abase_produce_base() * (self.rank as f64))],
+            IndustryUnitType::SimpleFuelRefinery => vec![(
+                Resource::Fuel,
+                get_sbase_produce_base() * (self.rank as f64),
+            )],
+            IndustryUnitType::SimpleHullFoundry => vec![(
+                Resource::Hull,
+                get_sbase_produce_base() * (self.rank as f64),
+            )],
+            IndustryUnitType::AdvancedFuelRefinery => vec![(
+                Resource::Fuel,
+                get_abase_produce_base() * (self.rank as f64),
+            )],
+            IndustryUnitType::AdvancedHullFoundry => vec![(
+                Resource::Hull,
+                get_abase_produce_base() * (self.rank as f64),
+            )],
         }
         .into_iter()
         .map(|(res, amnt)| {
@@ -193,15 +209,13 @@ impl IndustryUnit {
         if self.operator.is_none() {
             return false;
         }
-        self.resources_required
-            .iter()
-            .all(|(res, amnt)| {
-                if let Some(incargo) = resources.get(res) {
-                    incargo >= &(amnt * tdelta)
-                } else {
-                    false
-                }
-            })
+        self.resources_required.iter().all(|(res, amnt)| {
+            if let Some(incargo) = resources.get(res) {
+                incargo >= &(amnt * tdelta)
+            } else {
+                false
+            }
+        })
     }
 
     pub fn work(&self, tdelta: &f64, resources: &mut BTreeMap<Resource, f64>) {
@@ -218,4 +232,3 @@ impl IndustryUnit {
         }
     }
 }
-

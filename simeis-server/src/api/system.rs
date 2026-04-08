@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use ntex::web;
-use ntex::web::types::Path;
 use ntex::web::HttpRequest;
 use ntex::web::ServiceConfig;
 

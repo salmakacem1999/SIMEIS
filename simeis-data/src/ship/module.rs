@@ -45,9 +45,7 @@ impl ShipModuleType {
     #[inline]
     pub fn get_price_buy(&self) -> f64 {
         match self {
-            ShipModuleType::Miner
-            | ShipModuleType::Pump
-            | ShipModuleType::GasSucker => 4500.0,
+            ShipModuleType::Miner | ShipModuleType::Pump | ShipModuleType::GasSucker => 4500.0,
         }
     }
 }
@@ -70,9 +68,7 @@ impl ShipModule {
     // Returns
     pub fn need(&self, ctype: &CrewMemberType) -> bool {
         match self.modtype {
-            ShipModuleType::Miner
-            | ShipModuleType::Pump
-            | ShipModuleType::GasSucker => {
+            ShipModuleType::Miner | ShipModuleType::Pump | ShipModuleType::GasSucker => {
                 ctype == &CrewMemberType::Operator && self.operator.is_none()
             }
         }

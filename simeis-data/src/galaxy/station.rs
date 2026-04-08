@@ -101,7 +101,11 @@ impl Station {
         CARGO_BASE_PRICE.powf((cap - STATION_INIT_CARGO) / CARGO_PRICE_INCDIV)
     }
 
-    pub async fn buy_industry(&self, player: &mut Player, unit: IndustryUnitType) -> Result<(IndustryUnitId, f64), Errcode> {
+    pub async fn buy_industry(
+        &self,
+        player: &mut Player,
+        unit: IndustryUnitType,
+    ) -> Result<(IndustryUnitId, f64), Errcode> {
         let cost = unit.get_price_buy();
         if player.money < cost {
             return Err(Errcode::NotEnoughMoney(player.money, cost));
@@ -116,7 +120,11 @@ impl Station {
         Ok((unit_id, cost))
     }
 
-    pub async fn upgrade_industry(&self, player: &mut Player, id: &IndustryUnitId) -> Result<u8, Errcode> {
+    pub async fn upgrade_industry(
+        &self,
+        player: &mut Player,
+        id: &IndustryUnitId,
+    ) -> Result<u8, Errcode> {
         self.ensure_has_player_data(&player.id).await;
         let pd = self.player_data.clone_val(&player.id).await.unwrap();
         let mut pd = pd.write().await;
@@ -132,8 +140,12 @@ impl Station {
         Ok(unit.rank)
     }
 
-    pub async fn start_industry(&self, player: &PlayerId, id: &IndustryUnitId) -> Result<(), Errcode> {
-        self.ensure_has_player_data(&player).await;
+    pub async fn start_industry(
+        &self,
+        player: &PlayerId,
+        id: &IndustryUnitId,
+    ) -> Result<(), Errcode> {
+        self.ensure_has_player_data(player).await;
         let pd = self.player_data.clone_val(player).await.unwrap();
         let mut pd = pd.write().await;
         let Some(unit) = pd.industry.get_mut(id) else {
@@ -143,8 +155,12 @@ impl Station {
         Ok(())
     }
 
-    pub async fn stop_industry(&self, player: &PlayerId, id: &IndustryUnitId) -> Result<(), Errcode> {
-        self.ensure_has_player_data(&player).await;
+    pub async fn stop_industry(
+        &self,
+        player: &PlayerId,
+        id: &IndustryUnitId,
+    ) -> Result<(), Errcode> {
+        self.ensure_has_player_data(player).await;
         let pd = self.player_data.clone_val(player).await.unwrap();
         let mut pd = pd.write().await;
         let Some(unit) = pd.industry.get_mut(id) else {
