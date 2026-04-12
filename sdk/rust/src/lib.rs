@@ -465,4 +465,19 @@ impl SimeisSDK {
     pub fn get_syslogs(&self) -> ApiResult {
         self.get("/syslogs")
     }
+
+    pub fn get_resources_info(&self) -> Result<HashMap<String, (f64, f64, f64, u64)>, Value> {
+        let got = self.get("/resources")?;
+        let mut result = HashMap::new();
+        for (res, val) in got.as_object().unwrap() {
+            let volume = json_get_float("volume", val).unwrap();
+            let base_price = json_get_float("base_price", val).unwrap();
+            let difficulty = json_get_float("difficulty", val).unwrap();
+            let minrank = json_get_uint("min-rank", val).unwrap();
+            result.insert(res.clone(), (
+                volume, base_price, difficulty, minrank,
+            ));
+        }
+        Ok(result)
+    }
 }

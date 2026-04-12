@@ -250,3 +250,4 @@ class SimeisSDK:
         return self.post(f"/market/{sta}/buy/{res}/{amnt}")
 
     # TODO (#33) get_syslogs
+    # TODO (#33) Add resources info
