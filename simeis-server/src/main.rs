@@ -23,7 +23,7 @@ async fn main() -> std::io::Result<()> {
         .filter_module("ntex_rt", log::LevelFilter::Warn)
         .filter_module("ntex_service::cfg", log::LevelFilter::Warn)
         .filter_module("ntex::http::h1", log::LevelFilter::Warn)
-        .filter_module("ntex_net::compio::io_impl", log::LevelFilter::Warn)
+        .filter_module("ntex_net::compio", log::LevelFilter::Warn)
         .init();
 
     log::info!("Running on http://0.0.0.0:{port}");
