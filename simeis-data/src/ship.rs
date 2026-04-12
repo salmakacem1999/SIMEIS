@@ -265,7 +265,7 @@ impl Ship {
         );
 
         let extraction = ExtractionInfo::create(self, planet);
-        if !extraction.0.is_empty() {
+        if !extraction.mining_rate.is_empty() {
             self.state = ShipState::Extracting(extraction.clone());
         } else {
             return Err(Errcode::CannotExtractWithoutModule);
