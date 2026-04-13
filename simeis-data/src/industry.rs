@@ -93,7 +93,7 @@ pub struct IndustryUnit {
     pub rank: u8,
     pub started: bool,
 
-    operator: Option<CrewId>,
+    pub operator: Option<CrewId>,
     resources_required: Vec<(Resource, f64)>,
     resources_created: Vec<(Resource, f64)>,
 }
@@ -123,8 +123,8 @@ impl IndustryUnit {
     }
 
     #[inline]
-    fn input(&self, oprank: u8) -> Vec<(Resource, f64)> {
-        debug_assert_ne!(oprank, 1);
+    pub fn input(&self, oprank: u8) -> Vec<(Resource, f64)> {
+        debug_assert_ne!(oprank, 0);
         let div = 1.0 / (std::f64::consts::E + (oprank as f64) - 1.0).ln();
         match self.unittype {
             IndustryUnitType::SimpleFuelRefinery => {
@@ -172,8 +172,8 @@ impl IndustryUnit {
     }
 
     #[inline]
-    fn output(&self, oprank: u8) -> Vec<(Resource, f64)> {
-        debug_assert_ne!(oprank, 1);
+    pub fn output(&self, oprank: u8) -> Vec<(Resource, f64)> {
+        debug_assert_ne!(oprank, 0);
         let pown = (oprank as f64).ln();
 
         match self.unittype {
@@ -202,33 +202,47 @@ impl IndustryUnit {
         .collect()
     }
 
-    pub fn can_work(&self, tdelta: &f64, resources: &BTreeMap<Resource, f64>) -> bool {
+    pub fn can_work(&self, tdelta: &f64, resources: &BTreeMap<Resource, f64>) -> Option<f64> {
         if !self.started {
-            return false;
+            return None;
         }
         if self.operator.is_none() {
-            return false;
+            return None;
         }
-        self.resources_required.iter().all(|(res, amnt)| {
+        let mut max_ratio : f64 = 0.0;
+        for (res, amnt) in self.resources_required.iter() {
             if let Some(incargo) = resources.get(res) {
-                incargo >= &(amnt * tdelta)
+                let max = amnt * tdelta;
+                if incargo >= &max {
+                    max_ratio = 1.0;
+                } else {
+                    let ratio = incargo / max;
+                    max_ratio = max_ratio.max(ratio);
+                }
             } else {
-                false
+                return None;
             }
-        })
+        }
+        Some(max_ratio)
     }
 
-    pub fn work(&self, tdelta: &f64, resources: &mut BTreeMap<Resource, f64>) {
+    pub fn work(&self, tdelta: f64, resources: &mut BTreeMap<Resource, f64>) {
         debug_assert!(self.started);
         debug_assert!(self.operator.is_some());
         for (res, amnt) in self.resources_required.iter() {
             let n = resources.get_mut(res).unwrap();
             *n -= amnt * tdelta;
+            log::warn!("Used {} of {res:?}, got {n} left", amnt * tdelta);
         }
 
         for (res, amnt) in self.resources_created.iter() {
+            if !resources.contains_key(&res) {
+                resources.insert(*res, 0.0);
+            }
+
             let n = resources.get_mut(res).unwrap();
             *n += amnt * tdelta;
+            log::warn!("Created {} of {res:?}, got {n} now", amnt * tdelta);
         }
     }
 }

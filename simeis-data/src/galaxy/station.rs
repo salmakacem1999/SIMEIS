@@ -234,9 +234,6 @@ impl Station {
         let Some(module) = ship.modules.get_mut(mod_id) else {
             return Err(Errcode::NoSuchModule(*mod_id));
         };
-        if module.operator.is_some() {
-            return Err(Errcode::CrewNotNeeded);
-        }
         if !module.need(&cm.member_type) {
             return Err(Errcode::CrewNotNeeded);
         }
@@ -522,8 +519,9 @@ impl Station {
         let mut pd = pd.write().await;
         let all_industry = pd.industry.clone();
         for (_, industry) in all_industry.iter() {
-            if industry.can_work(&tdelta, &pd.cargo.resources) {
-                industry.work(&tdelta, &mut pd.cargo.resources);
+            if let Some(ratio) = industry.can_work(&tdelta, &pd.cargo.resources) {
+                let t = tdelta * ratio;
+                industry.work(t, &mut pd.cargo.resources);
             }
         }
     }
