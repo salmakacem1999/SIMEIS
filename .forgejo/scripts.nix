@@ -119,4 +119,19 @@
       '';
     };
     in "${app}/bin/check-todos";
+
+    check_api = let
+      app = pkgs.writeShellApplication {
+        name = "check-api";
+        runtimeInputs = [ pkgs.ripgrep ];
+        # TODO Gather all the APIs paths to a json file
+        #   Store the @key value into a dict
+        # TODO Search the Rust SDK to ensure every API is hit
+        # TODO Search the Python SDK to ensure every API is hit
+        # TODO Search the func tests to ensure every API is hit
+        # TODO Generate the swagger API inside /doc, ensure everything is documented
+        text = ''
+        '';
+      };
+    in "${app}/bin/check-api";
   }
