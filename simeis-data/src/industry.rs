@@ -82,7 +82,12 @@ impl IndustryUnitType {
     #[inline]
     // TODO (#9) Move price based on inflation rate of the station
     pub fn get_price_buy(&self) -> f64 {
-        8000.0
+        match self {
+            IndustryUnitType::SimpleHullFoundry
+            | IndustryUnitType::SimpleFuelRefinery => 8000.0,
+            IndustryUnitType::AdvancedHullFoundry
+            | IndustryUnitType::AdvancedFuelRefinery => 18000.0,
+        }
     }
 }
 
