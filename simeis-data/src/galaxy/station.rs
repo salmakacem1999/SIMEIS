@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use mea::rwlock::RwLock;
@@ -6,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::crew::{Crew, CrewId, CrewMember, CrewMemberType};
 use crate::errors::Errcode;
+use crate::industry::{IndustryUnit, IndustryUnitId, IndustryUnitType};
 use crate::market::{fee_rate, Market, MarketTx};
 use crate::player::{Player, PlayerId};
 use crate::ship::cargo::ShipCargo;
@@ -24,7 +26,6 @@ pub const STATION_INIT_CARGO: f64 = 1000.0;
 
 pub type StationId = u16;
 
-// TODO (#7) Add refineries to create fuel & hull from raw resources
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StationInfo {
     pub id: StationId,
@@ -47,6 +48,7 @@ pub struct StationPlayerData {
     pub crew: Crew,
     pub trader: Option<CrewId>,
     pub cargo: ShipCargo,
+    pub industry: BTreeMap<IndustryUnitId, IndustryUnit>,
 }
 
 impl StationPlayerData {
@@ -97,6 +99,75 @@ impl Station {
             STATION_INIT_CARGO
         };
         CARGO_BASE_PRICE.powf((cap - STATION_INIT_CARGO) / CARGO_PRICE_INCDIV)
+    }
+
+    pub async fn buy_industry(
+        &self,
+        player: &mut Player,
+        unit: IndustryUnitType,
+    ) -> Result<(IndustryUnitId, f64), Errcode> {
+        let cost = unit.get_price_buy();
+        if player.money < cost {
+            return Err(Errcode::NotEnoughMoney(player.money, cost));
+        }
+        self.ensure_has_player_data(&player.id).await;
+        let pd = self.player_data.clone_val(&player.id).await.unwrap();
+        let mut pd = pd.write().await;
+        let unit = unit.new_unit();
+        let unit_id = unit.id;
+        pd.industry.insert(unit_id, unit);
+        player.money -= cost;
+        Ok((unit_id, cost))
+    }
+
+    pub async fn upgrade_industry(
+        &self,
+        player: &mut Player,
+        id: &IndustryUnitId,
+    ) -> Result<u8, Errcode> {
+        self.ensure_has_player_data(&player.id).await;
+        let pd = self.player_data.clone_val(&player.id).await.unwrap();
+        let mut pd = pd.write().await;
+        let Some(unit) = pd.industry.get_mut(id) else {
+            return Err(Errcode::NoSuchIndustryUnit);
+        };
+        let cost = unit.price_next_rank();
+        if cost > player.money {
+            return Err(Errcode::NotEnoughMoney(player.money, cost));
+        }
+        player.money -= cost;
+        unit.rank += 1;
+        Ok(unit.rank)
+    }
+
+    pub async fn start_industry(
+        &self,
+        player: &PlayerId,
+        id: &IndustryUnitId,
+    ) -> Result<(), Errcode> {
+        self.ensure_has_player_data(player).await;
+        let pd = self.player_data.clone_val(player).await.unwrap();
+        let mut pd = pd.write().await;
+        let Some(unit) = pd.industry.get_mut(id) else {
+            return Err(Errcode::NoSuchIndustryUnit);
+        };
+        unit.started = true;
+        Ok(())
+    }
+
+    pub async fn stop_industry(
+        &self,
+        player: &PlayerId,
+        id: &IndustryUnitId,
+    ) -> Result<(), Errcode> {
+        self.ensure_has_player_data(player).await;
+        let pd = self.player_data.clone_val(player).await.unwrap();
+        let mut pd = pd.write().await;
+        let Some(unit) = pd.industry.get_mut(id) else {
+            return Err(Errcode::NoSuchIndustryUnit);
+        };
+        unit.started = false;
+        Ok(())
     }
 
     pub async fn buy_cargo(&self, player: &mut Player, amnt: &usize) -> Result<ShipCargo, Errcode> {
@@ -163,9 +234,6 @@ impl Station {
         let Some(module) = ship.modules.get_mut(mod_id) else {
             return Err(Errcode::NoSuchModule(*mod_id));
         };
-        if module.operator.is_some() {
-            return Err(Errcode::CrewNotNeeded);
-        }
         if !module.need(&cm.member_type) {
             return Err(Errcode::CrewNotNeeded);
         }
@@ -173,6 +241,29 @@ impl Station {
         let pd = self.player_data.clone_val(&ship.owner).await.unwrap();
         let mut pd = pd.write().await;
         ship.crew.0.insert(*id, pd.idle_crew.0.remove(id).unwrap());
+        Ok(())
+    }
+
+    pub async fn assign_crew_to_industry(
+        &self,
+        pid: &PlayerId,
+        id: &CrewId,
+        iid: &IndustryUnitId,
+    ) -> Result<(), Errcode> {
+        let cm = self
+            .get_idle_crew(pid, id, CrewMemberType::Operator)
+            .await?;
+        let pd = self.player_data.clone_val(pid).await.unwrap();
+        let mut pd = pd.write().await;
+        let Some(industry) = pd.industry.get_mut(iid) else {
+            return Err(Errcode::NoSuchIndustryUnit);
+        };
+        if !industry.need_crew_member(&cm.member_type) {
+            return Err(Errcode::CrewNotNeeded);
+        }
+        industry.assign_operator(*id, &cm);
+        let cm = pd.idle_crew.0.remove(id).unwrap();
+        pd.crew.0.insert(*id, cm);
         Ok(())
     }
 
@@ -442,5 +533,43 @@ impl Station {
             "idle_crew": data.idle_crew,
             "trader": data.trader,
         })
+    }
+
+    pub async fn update_crafting(&self, tdelta: f64, id: &PlayerId) {
+        let Some(pd) = self.player_data.clone_val(id).await else {
+            return;
+        };
+        let mut pd = pd.write().await;
+        let all_industry = pd.industry.clone();
+        for (_, industry) in all_industry.iter() {
+            if let Some(ratio) = industry.can_work(&tdelta, &pd.cargo.resources) {
+                let t = tdelta * ratio;
+                industry.work(t, &mut pd.cargo.resources);
+            }
+        }
+    }
+
+    pub async fn get_industry_production(
+        &self,
+        pid: &PlayerId,
+        id: IndustryUnitId,
+    ) -> Result<(Vec<(Resource, f64)>, Vec<(Resource, f64)>), Errcode> {
+        let Some(pd) = self.player_data.clone_val(pid).await else {
+            return Err(Errcode::NoSuchIndustryUnit);
+        };
+
+        let pd = pd.read().await;
+        let Some(industry) = pd.industry.get(&id) else {
+            return Err(Errcode::NoSuchIndustryUnit);
+        };
+
+        let Some(opid) = industry.operator else {
+            return Ok((vec![], vec![]));
+        };
+        let op = pd.crew.0.get(&opid).unwrap();
+
+        let inputs = industry.input(op.rank);
+        let outputs = industry.output(op.rank);
+        Ok((inputs, outputs))
     }
 }

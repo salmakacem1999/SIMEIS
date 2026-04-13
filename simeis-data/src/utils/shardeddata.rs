@@ -23,7 +23,6 @@ impl<K: ShardDataKey, T> ShardedLockedData<K, T> {
     fn get_shard(&self, key: &K) -> &RwLock<BTreeMap<K, T>> {
         let idx = key.get_shard_idx(self.shards.len());
         debug_assert!(idx < self.shards.len());
-        debug_assert!(idx > 0);
         self.shards.get(idx).unwrap()
     }
 

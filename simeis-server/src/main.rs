@@ -7,6 +7,9 @@ mod api;
 
 pub type GameState = ntex::web::types::State<Game>;
 
+// Simeis is a game player with an API
+// To play, you must start by creating a player with `/player/new/{name}`
+// The key you get from this API must be passed to each request as a HTTP header of key "Simeis-Key"
 #[ntex::main]
 async fn main() -> std::io::Result<()> {
     #[cfg(not(feature = "testing"))]
@@ -23,7 +26,7 @@ async fn main() -> std::io::Result<()> {
         .filter_module("ntex_rt", log::LevelFilter::Warn)
         .filter_module("ntex_service::cfg", log::LevelFilter::Warn)
         .filter_module("ntex::http::h1", log::LevelFilter::Warn)
-        .filter_module("ntex_net::compio::io_impl", log::LevelFilter::Warn)
+        .filter_module("ntex_net::compio", log::LevelFilter::Warn)
         .init();
 
     log::info!("Running on http://0.0.0.0:{port}");

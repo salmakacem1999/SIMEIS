@@ -17,18 +17,20 @@
       runtimeInputs = deps ++ [ python ];
       text = ''
         export CARGO_HOME=$PWD/.cargohome
-        export RUST_LOG="actix_web=warn"
-        cargo build --features testing
+        export RUST_BACKTRACE=full
+        mkdir -p target
+        cargo build --target-dir ./target/functests/ --features testing
         rm -f /tmp/simeis_logs
-        ./target/debug/simeis-server 1>/tmp/simeis_logs 2>&1 &
-        sleep 1
+        ./target/functests/debug/simeis-server 1>/tmp/simeis_logs 2>&1 &
+        sleep 5
 
         if [ -z "$(jobs -r)" ]; then
           echo "!!! Failed to start the server";
+          cat /tmp/simeis_logs
           exit 1;
         fi
 
-        if ! python3 .forgejo/functests.py 127.0.0.1 9345; then
+        if ! python3 .forgejo/functests.py 127.0.0.1 9345 "$@"; then
           echo "Some tests failed"
           kill "$(jobs -p)"
 
@@ -72,6 +74,7 @@
       ".git"
       ".forgejo/scripts.nix"
       ".forgejo/workflows"
+      ".swagger"
       "TODO.md"
     ];
 
@@ -119,4 +122,33 @@
       '';
     };
     in "${app}/bin/check-todos";
+
+    apiSanity = let
+      app = pkgs.writeShellApplication {
+        name = "apiSanity";
+        runtimeInputs = [ pkgs.ripgrep ];
+        text = ''
+          export CARGO_HOME=$PWD/.cargohome
+        export RUST_BACKTRACE=full
+          mkdir -p target
+          cargo build --target-dir ./target/apisanity/ --features testing
+          rm -f /tmp/simeis_logs
+          ./target/apisanity/debug/simeis-server 1>/tmp/simeis_logs 2>&1 &
+          sleep 5
+          if [ -z "$(jobs -r)" ]; then
+            echo "!!! Failed to start the server";
+            cat /tmp/simeis_logs
+            exit 1;
+          fi
+          if ! python3 .forgejo/generate_swagger.py 127.0.0.1 9345 "$@"; then
+            echo "Error while generating swagger file"
+            kill "$(jobs -p)"
+            exit 1;
+          fi
+
+          kill "$(jobs -p)"
+          echo "[*] Finished"
+        '';
+      };
+    in "${app}/bin/apiSanity";
   }

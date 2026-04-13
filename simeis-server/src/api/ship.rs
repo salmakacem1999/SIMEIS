@@ -20,6 +20,8 @@ use simeis_data::ship::ShipId;
 use crate::api::build_response;
 use crate::api::GameState;
 
+// @summary Get the status of the ship
+// @returns The data for the ship
 #[web::get("")]
 async fn get_ship_status(
     srv: GameState,
@@ -36,7 +38,27 @@ async fn get_ship_status(
     build_response(data)
 }
 
-// Compute how much will cost a travel to a specific position (X, Y, Z)
+// @summary Compute how much wages cost per second for this ship
+// @returns The amount of credits consumed each second by the crew of this ship
+#[web::get("/wages")]
+async fn get_wages_cost(
+    srv: GameState,
+    args: Path<ShipId>,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let ship_id = *args;
+    let pkey = get_player_key!(req);
+
+    let data = srv
+        .map_ship(&pkey, &ship_id, |_, ship| {
+            Box::pin(async move { Ok(json!({ "wages": ship.crew.sum_wages() })) })
+        })
+        .await;
+    build_response(data)
+}
+
+// @summary Compute how much will cost a travel to a specific position (X, Y, Z)
+// @returns Travel informations on this destination
 #[web::get("/travelcost/{x}/{y}/{z}")]
 async fn compute_travel_costs(
     srv: GameState,
@@ -57,7 +79,9 @@ async fn compute_travel_costs(
     build_response(data)
 }
 
-// Navigate to position (X, Y, Z), ship will have the state InFlight during the travel
+// @summary Navigate to position (X, Y, Z)
+// @returns Travel informations on the destination
+// Ship will have the state InFlight during the travel
 #[web::post("/navigate/{x}/{y}/{z}")]
 async fn ask_navigate(
     srv: GameState,
@@ -77,7 +101,8 @@ async fn ask_navigate(
     build_response(data)
 }
 
-// Stop the naviguation, ship will become Idle, and stay in place
+// @summary Stop the naviguation, ship will become Idle, and stay in place
+// @returns The position where the ship has stopped
 #[web::post("/navigation/stop")]
 async fn stop_navigation(
     srv: GameState,
@@ -94,7 +119,9 @@ async fn stop_navigation(
     build_response(data)
 }
 
-// Start the extraction of resources on the planet, ship will have the state "Extracting" until its cargo is full
+// @summary Start the extraction of resources on the planet
+// @returns The rate at which every resources are mined, and the time necessary to fill the cargo
+// Ship will have the state "Extracting" until its cargo is full
 #[web::post("/extraction/start")]
 async fn start_extraction(
     srv: GameState,
@@ -110,7 +137,8 @@ async fn start_extraction(
     build_response(data)
 }
 
-// Stop the extraction of resources on the planet
+// @summary Stop the extraction of resources on the planet, the ship state will be Idle
+// @returns Nothing
 #[web::post("/extraction/stop")]
 async fn stop_extraction(
     srv: GameState,
@@ -130,7 +158,33 @@ async fn stop_extraction(
     build_response(data)
 }
 
-// Unload a specific amount of a specific resource on the station's storage
+// @summary Unload the whole cargo of a ship into a station
+// @returns How much of each resource were unloaded, and if the ship cargo is empty or not
+#[web::post("/unload/{station_id}/all")]
+async fn unload_all_ship_cargo(
+    srv: GameState,
+    args: Path<(ShipId, StationId)>,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let (ship_id, station_id) = *args;
+    let pkey = get_player_key!(req);
+    let data = srv
+        .map_ship_mut_in_station(&pkey, &station_id, &ship_id, |_, station, ship| {
+            Box::pin(async move {
+                let unloaded = ship.unload_all(station).await?;
+                Ok(json!({
+                    "unloaded": unloaded,
+                    "emptied": ship.cargo.usage < 0.0000001,
+                }))
+            })
+        })
+        .await;
+    build_response(data)
+}
+
+// @summary Unload a specific amount of a specific resource on the station's storage
+// @returns How much of this resource was effectively unloaded from the ship
+// Depending on the cargo space available on the station, may not unload anything
 #[web::post("/unload/{station_id}/{resource}/{amount}")]
 async fn unload_ship_cargo(
     srv: GameState,
@@ -173,11 +227,13 @@ pub fn configure<T: IntoPattern>(base: T, srv: &mut ServiceConfig) {
     srv.service(
         scope(base)
             .service(compute_travel_costs)
+            .service(get_wages_cost)
             .service(get_ship_status)
             .service(ask_navigate)
             .service(stop_navigation)
             .service(start_extraction)
             .service(stop_extraction)
+            .service(unload_all_ship_cargo)
             .service(unload_ship_cargo),
     );
 }

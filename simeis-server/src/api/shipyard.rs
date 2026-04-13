@@ -20,7 +20,8 @@ use simeis_data::ship::ShipId;
 use crate::api::build_response;
 use crate::api::GameState;
 
-// List all the ships available for buying
+// @summary List all the ships available for buying
+// @returns For each ship, its statistics, and price
 #[web::get("/list")]
 async fn list_shipyard_ships(
     srv: GameState,
@@ -52,7 +53,8 @@ async fn list_shipyard_ships(
     build_response(data)
 }
 
-// Buy a ship from the station's shop
+// @summary Buy a ship from the station's shop
+// @returns The ID of the ship you just bought
 #[web::post("/buy/{id}")]
 async fn shipyard_buy_ship(
     srv: GameState,
@@ -67,14 +69,15 @@ async fn shipyard_buy_ship(
                 player
                     .buy_ship(&station_id, &ship_id)
                     .await
-                    .map(|v| json!({ "shipId": v }))
+                    .map(|v| json!({ "id": v }))
             })
         })
         .await;
     build_response(data)
 }
 
-// List all upgrades available for buying on a specific ship, on the station
+// @summary List all upgrades available for buying on a specific ship, on the station
+// @returns The price of every upgrade available
 #[web::get("/upgrade/{ship_id}")]
 async fn shipyard_list_upgrades(
     srv: GameState,
@@ -94,7 +97,6 @@ async fn shipyard_list_upgrades(
                         upgr,
                         json!({
                             "price": price,
-                            "description": upgr.description(),
                         }),
                     );
                 }
@@ -106,7 +108,8 @@ async fn shipyard_list_upgrades(
     build_response(data)
 }
 
-// Buy an upgrade and install it on a ship
+// @summary Buy an upgrade and install it on a ship
+// @returns The cost of the upgrade
 #[web::post("/upgrade/{ship_id}/{upgrade_type}")]
 async fn shipyard_buy_upgrade(
     srv: GameState,

@@ -13,7 +13,9 @@ use simeis_data::errors::Errcode;
 use crate::api::build_response;
 use crate::api::GameState;
 
-// Creates a new player in the game
+// @summary Creates a new player in the game
+// @returns The ID of the player, and its authentication secret key
+// The secret key must be used in the "Simeis-Key" HTTP header
 #[web::post("/new/{name}")]
 async fn new_player(srv: GameState, name: Path<String>) -> impl web::Responder {
     let name = name.to_string();
@@ -26,7 +28,8 @@ async fn new_player(srv: GameState, name: Path<String>) -> impl web::Responder {
     build_response(res)
 }
 
-// Get the status from the player of a given id. If the ID is yours, give extensive metadata, else, minimal informations
+// @summary Get the status from the player of a given id.
+// @returns Information about the player, complete if it's you, minimal if it's another player
 #[web::get("/{id}")]
 async fn get_player(srv: GameState, id: Path<PlayerId>, req: HttpRequest) -> impl web::Responder {
     let pkey = get_player_key!(req);

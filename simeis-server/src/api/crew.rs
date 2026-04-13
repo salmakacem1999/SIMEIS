@@ -15,13 +15,15 @@ use simeis_data::crew::CrewId;
 use simeis_data::crew::CrewMemberType;
 use simeis_data::errors::Errcode;
 use simeis_data::galaxy::station::StationId;
+use simeis_data::industry::IndustryUnitId;
 use simeis_data::ship::module::ShipModuleId;
 use simeis_data::ship::ShipId;
 
 use crate::api::build_response;
 use crate::api::GameState;
 
-// Hire a new crew member on the station. Unless assigned, it will stay idle
+// @summary Hire a new crew member on the station. Unless assigned, it will stay idle
+// @returns The ID of the hired crew member
 #[web::post("/hire/{crewtype}")]
 async fn hire_crew(
     srv: GameState,
@@ -53,7 +55,8 @@ async fn hire_crew(
     build_response(data)
 }
 
-// List all the upgrades available for the crew of a specific ship
+// @summary List all the upgrades available for the crew of a specific ship
+// @returns For each member, his type, rank, and price for next rank
 #[web::get("/upgrade/ship/{ship_id}")]
 async fn get_crew_upgrades(
     srv: GameState,
@@ -89,7 +92,8 @@ async fn get_crew_upgrades(
     build_response(data)
 }
 
-// Upgrade a crew member of a specific ship
+// @summary Upgrade a crew member of a specific ship
+// @returns New rank, and cost of the upgrade
 #[web::post("/upgrade/ship/{ship_id}/{crew_id}")]
 async fn upgrade_ship_crew(
     srv: GameState,
@@ -118,7 +122,8 @@ async fn upgrade_ship_crew(
     build_response(data)
 }
 
-// Upgrade a crew member of the station
+// @summary Upgrade a crew member of the station
+// @returns New rank, and cost of the upgrade
 #[web::post("/upgrade/{crew_id}")]
 async fn upgrade_station_crew(
     args: Path<(StationId, CrewId)>,
@@ -141,7 +146,9 @@ async fn upgrade_station_crew(
     build_response(data)
 }
 
-// Assign a crew member as a trader on a station. The level of the trader will affect the fee rate applied on the market
+// @summary Assign a crew member as a trader on a station.
+// @returns Nothing
+// The level of the trader will affect the fee rate applied on the market
 #[web::post("/assign/{crewid}/trading")]
 async fn assign_trader(
     args: Path<(StationId, CrewId)>,
@@ -162,8 +169,10 @@ async fn assign_trader(
     build_response(data)
 }
 
-// Assign a crew member as a pilot on a ship. The level of the pilot will affect the speed of the ship, as well as it's fuel consumption
-#[web::post("/assign/{crewid}/{shipid}/pilot")]
+// @summary Assign a crew member as a pilot on a ship.
+// @returns Nothing
+// The level of the pilot will affect the speed of the ship, as well as it's fuel consumption
+#[web::post("/assign/{crewid}/ship/{shipid}/pilot")]
 async fn assign_pilot(
     args: Path<(StationId, CrewId, ShipId)>,
     srv: GameState,
@@ -188,9 +197,11 @@ async fn assign_pilot(
     build_response(data)
 }
 
-// Assign a crew member as an operator on a ship. The level of the crew member will affect the extraction rate of the resources
-#[web::post("/assign/{crewid}/{shipid}/{modid}")]
-async fn assign_operator(
+// @summary Assign a crew member as an operator on a ship.
+// @returns Nothing
+// The level of the crew member will affect the extraction rate of the resources
+#[web::post("/assign/{crewid}/ship/{shipid}/{modid}")]
+async fn assign_operator_to_ship(
     args: Path<(StationId, CrewId, ShipId, ShipModuleId)>,
     srv: GameState,
     req: HttpRequest,
@@ -211,6 +222,31 @@ async fn assign_operator(
     build_response(data)
 }
 
+// @summary Assign a crew member as an operator on an industry unit of a sttion.
+// @returns Nothing
+// The level of the crew member will affect the production rate
+#[web::post("/assign/{crewid}/industry/{iid}")]
+async fn assign_operator_to_industry(
+    args: Path<(StationId, CrewId, IndustryUnitId)>,
+    srv: GameState,
+    req: HttpRequest,
+) -> impl web::Responder {
+    let (station_id, crew_id, industry_id) = *args;
+    let pkey = get_player_key!(req);
+
+    let data = srv
+        .map_station(&pkey, &station_id, |pid, station| {
+            Box::pin(async move {
+                station
+                    .assign_crew_to_industry(pid, &crew_id, &industry_id)
+                    .await
+                    .map(|_| json!({}))
+            })
+        })
+        .await;
+    build_response(data)
+}
+
 pub fn configure<T: IntoPattern>(base: T, srv: &mut ServiceConfig) {
     srv.service(
         scope(base)
@@ -219,7 +255,8 @@ pub fn configure<T: IntoPattern>(base: T, srv: &mut ServiceConfig) {
             .service(upgrade_ship_crew)
             .service(upgrade_station_crew)
             .service(assign_pilot)
-            .service(assign_operator)
+            .service(assign_operator_to_industry)
+            .service(assign_operator_to_ship)
             .service(assign_trader),
     );
 }

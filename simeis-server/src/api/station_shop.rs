@@ -21,7 +21,8 @@ use simeis_data::ship::ShipId;
 use crate::api::build_response;
 use crate::api::GameState;
 
-// List all the modules available to buy on the station
+// @summary List all the modules available to buy on the station
+// @returns For each module, its price
 #[web::get("/modules")]
 async fn get_prices_ship_module(
     srv: GameState,
@@ -46,7 +47,8 @@ async fn get_prices_ship_module(
     build_response(data)
 }
 
-// Buy a ship module and install it on a ship
+// @summary Buy a ship module and install it on a ship
+// @returns The ID of the module, and the cost of the operation
 #[web::post("/modules/{ship_id}/buy/{modtype}")]
 async fn buy_ship_module(
     srv: GameState,
@@ -73,7 +75,8 @@ async fn buy_ship_module(
     build_response(data)
 }
 
-// List the available upgrades for a module on a ship
+// @summary List the available upgrades for a module on a ship
+// @returns For each module, the type of module, and price of the next upgrade
 #[web::get("/modules/{ship_id}/upgrade")]
 async fn get_ship_module_upgrade_prices(
     srv: GameState,
@@ -103,7 +106,9 @@ async fn get_ship_module_upgrade_prices(
     build_response(data)
 }
 
-// Buy an upgrade for a module installed on a ship, the level of a module will affect the extraction rate for a resource, as well as what kind of resources it kind mine.
+// @summary Buy an upgrade for a module installed on a ship
+// @returns The new rank of the module, and the cost of the upgrade
+// The level of a module will affect the extraction rate for a resource, as well as what kind of resources it kind mine.
 #[web::post("/modules/{ship_id}/upgrade/{modid}")]
 async fn buy_ship_module_upgrade(
     srv: GameState,
@@ -126,7 +131,8 @@ async fn buy_ship_module_upgrade(
     build_response(data)
 }
 
-// Buy a storage expansion for the station
+// @summary Buy a storage expansion for the station
+// @returns The cargo of the station
 #[web::post("/cargo/buy/{amount}")]
 async fn buy_station_cargo(
     srv: GameState,

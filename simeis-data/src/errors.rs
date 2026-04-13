@@ -30,6 +30,7 @@ pub enum Errcode {
     CrewMemberNotFound(crate::crew::CrewId),
     PlayerLost,
     GameSignalSend,
+    NoSuchIndustryUnit,
 }
 
 impl Errcode {
@@ -73,6 +74,7 @@ impl Errcode {
             Errcode::NoPilotAssigned => "No pilot is assigned on this ship".to_string(),
             Errcode::GameSignalSend => "Error while sending a game signal to state".to_string(),
             Errcode::CannotExtractWithoutModule => "Cannot extract because the ship doesn't have the required module".to_string(),
+            Errcode::NoSuchIndustryUnit => "The provided industry unit doesn't exist".to_string(),
         }
     }
 }

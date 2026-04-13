@@ -91,7 +91,7 @@ impl Game {
             rt.block_on(thread_data.start(recv_stop, sysrecv));
             rt.run();
         });
-        // TODO Reduce stack size from this task, > 1024
+        // TODO (#34) Reduce stack size from this task, > 1024
         (thread, data)
     }
 
@@ -149,6 +149,12 @@ impl Game {
             let player = self.players.clone_val(&player_id).await.unwrap();
             let mut player = player.write().await;
             player.update_money(syslog, ITER_PERIOD.as_secs_f64()).await;
+
+            for (_, station) in player.stations.iter() {
+                station
+                    .update_crafting(ITER_PERIOD.as_secs_f64(), &player_id)
+                    .await;
+            }
 
             let mut deadship = vec![];
             for (id, ship) in player.ships.iter_mut() {

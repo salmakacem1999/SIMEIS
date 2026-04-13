@@ -27,10 +27,10 @@ jobs:
           key: ${{ runner.os }}-tests-${{ steps.cargo-lock-hash.outputs.hash }}
 
       - name: "Unit tests"
-        run: nix run .#unit_tests
+        run: nix run .#unit_tests --show-trace -L
 
       - name: "Functional tests"
-        run: nix run .#functional_tests
+        run: nix run .#functional_tests --show-trace -L
 
   code-check:
     runs-on: nix
