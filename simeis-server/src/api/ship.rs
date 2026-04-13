@@ -166,7 +166,7 @@ async fn unload_all_ship_cargo(
     args: Path<(ShipId, StationId)>,
     req: HttpRequest,
 ) -> impl web::Responder {
-    let (ship_id, station_id) = args.clone();
+    let (ship_id, station_id) = *args;
     let pkey = get_player_key!(req);
     let data = srv
         .map_ship_mut_in_station(&pkey, &station_id, &ship_id, |_, station, ship| {
@@ -234,6 +234,6 @@ pub fn configure<T: IntoPattern>(base: T, srv: &mut ServiceConfig) {
             .service(start_extraction)
             .service(stop_extraction)
             .service(unload_all_ship_cargo)
-            .service(unload_ship_cargo)
+            .service(unload_ship_cargo),
     );
 }

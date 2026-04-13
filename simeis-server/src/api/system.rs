@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use ntex::web;
-use ntex::web::{HttpRequest, HttpResponse};
 use ntex::web::ServiceConfig;
+use ntex::web::{HttpRequest, HttpResponse};
 
 use serde_json::json;
 use serde_json::to_value;
