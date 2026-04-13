@@ -7,6 +7,8 @@ mod api;
 
 pub type GameState = ntex::web::types::State<Game>;
 
+// TODO Description of the game
+// Simeis is a game player with an API
 #[ntex::main]
 async fn main() -> std::io::Result<()> {
     #[cfg(not(feature = "testing"))]

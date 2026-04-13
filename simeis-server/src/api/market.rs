@@ -17,14 +17,16 @@ use simeis_data::ship::resources::Resource;
 use crate::api::build_response;
 use crate::api::GameState;
 
-// Get prices of each resources on the market
+// @summary Get prices of each resources on the market
+// @returns The price for each resource
 #[web::get("/prices")]
 async fn get_market_prices(srv: GameState) -> impl web::Responder {
     let res = srv.market.to_json().await;
     build_response(Ok(res))
 }
 
-// Buy a specific resource on the market
+// @summary Buy a specific resource on the market
+// @returns How much was added to the cargo, how much money was removed, and the amount of fees
 #[web::post("/{station_id}/buy/{resource}/{amnt}")]
 async fn buy_resource(
     srv: GameState,
@@ -43,7 +45,8 @@ async fn buy_resource(
     build_response(data)
 }
 
-// Sell a specific resource on the market
+// @summary Sell a specific resource on the market
+// @returns How much was removed from the cargo, how much money was added, and the amount of fees
 #[web::post("/{station_id}/sell/{resource}/{amnt}")]
 async fn sell_resource(
     srv: GameState,
@@ -62,7 +65,9 @@ async fn sell_resource(
     build_response(data)
 }
 
-// Get the fee rate applied on the market of a station, depends on the level of the trader
+// Depends on the level of the trader
+// @summary Get the fee rate applied on the market of a station
+// @returns The fee rate
 #[web::get("/{station_id}/fee_rate")]
 async fn get_fee_rate(
     srv: GameState,

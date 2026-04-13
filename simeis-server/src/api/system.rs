@@ -18,13 +18,15 @@ use crate::api::GameState;
 
 // TODO     /    Serves the HTML page with the swagger
 
-// Test the connection to the server
+// @summary Test the connection to the server
+// @returns The messasge "pong"
 #[web::get("/ping")]
 async fn ping() -> impl web::Responder {
     build_response(Ok(json!({"ping": "pong"})))
 }
 
-// Get the logs from the server
+// @summary Get the logs from the server
+// @returns The list of events that occured for this player on the server
 #[web::get("/syslogs")]
 async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl web::Responder {
     let pkey = get_player_key!(req);
@@ -48,7 +50,8 @@ async fn get_syslogs(srv: GameState, req: HttpRequest) -> impl web::Responder {
     build_response(data)
 }
 
-// Get the version of the game
+// @summary Get the version of the game
+// @returns the version of the game
 #[web::get("/version")]
 async fn get_version() -> impl web::Responder {
     let v = env!("CARGO_PKG_VERSION");
@@ -56,6 +59,7 @@ async fn get_version() -> impl web::Responder {
 }
 
 #[cfg(feature = "testing")]
+// @noswagger
 // Make the server tick a single time
 #[web::post("/tick")]
 async fn tick_server(srv: GameState) -> impl web::Responder {
@@ -66,6 +70,7 @@ async fn tick_server(srv: GameState) -> impl web::Responder {
 }
 
 #[cfg(feature = "testing")]
+// @noswagger
 // Make the server tick N times
 #[web::post("/tick/{n}")]
 async fn tick_server_n(srv: GameState, n: ntex::web::types::Path<usize>) -> impl web::Responder {
@@ -78,7 +83,13 @@ async fn tick_server_n(srv: GameState, n: ntex::web::types::Path<usize>) -> impl
     build_response(Ok(json!({})))
 }
 
-// Get informations on all the resources on game
+// @summary Get informations on all the resources on game
+// @returns For each resource, returns basic informations
+// Informations returned:
+// - Volume in cargo
+// - Base market price
+// - If extractable, its difficulty
+// - If extractable, the minimum rank of the operator required
 #[web::get("/resources")]
 async fn resources_info() -> impl web::Responder {
     let mut data = BTreeMap::new();
@@ -106,7 +117,8 @@ async fn resources_info() -> impl web::Responder {
     build_response(Ok(to_value(data).unwrap()))
 }
 
-// Get the stats of the game, about all players
+// @summary Get the stats of the game, about all players
+// @returns The game statistics for each player currently in the game
 #[web::get("/gamestats")]
 async fn gamestats(srv: GameState) -> impl web::Responder {
     let mut data = BTreeMap::new();

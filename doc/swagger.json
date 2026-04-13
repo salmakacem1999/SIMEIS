@@ -1,0 +1,530 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Simeis",
+    "description": "Simeis is a game player with an API",
+    "version": "0.1.3"
+  },
+  "servers": {},
+  "paths": {
+    "/ping": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "The messasge \"pong\""
+        },
+        "tags": [
+          "system"
+        ],
+        "parameters": [],
+        "summary": "Test the connection to the server"
+      }
+    },
+    "/syslogs": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "The list of events that occured for this player on the server"
+        },
+        "tags": [
+          "system"
+        ],
+        "parameters": [],
+        "summary": "Get the logs from the server"
+      }
+    },
+    "/version": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "the version of the game"
+        },
+        "tags": [
+          "system"
+        ],
+        "parameters": [],
+        "summary": "Get the version of the game"
+      }
+    },
+    "/resources": {
+      "get": {
+        "description": "Informations returned:\n- Volume in cargo\n- Base market price\n- If extractable, its difficulty\n- If extractable, the minimum rank of the operator required",
+        "responses": {
+          "200": "For each resource, returns basic informations"
+        },
+        "tags": [
+          "system"
+        ],
+        "parameters": [],
+        "summary": "Get informations on all the resources on game"
+      }
+    },
+    "/gamestats": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "The game statistics for each player currently in the game"
+        },
+        "tags": [
+          "system"
+        ],
+        "parameters": [],
+        "summary": "Get the stats of the game, about all players"
+      }
+    },
+    "/market/prices": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "The price for each resource"
+        },
+        "tags": [
+          "market"
+        ],
+        "parameters": [],
+        "summary": "Get prices of each resources on the market"
+      }
+    },
+    "/market/{station_id}/fee_rate": {
+      "get": {
+        "description": "Depends on the level of the trader",
+        "responses": {
+          "200": "The fee rate"
+        },
+        "tags": [
+          "market"
+        ],
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Get the fee rate applied on the market of a station"
+      }
+    },
+    "/market/{station_id}/buy/{resource}/{amnt}": {
+      "post": {
+        "description": "",
+        "responses": {
+          "200": "How much was added to the cargo, how much money was removed, and the amount of fees"
+        },
+        "tags": [
+          "market"
+        ],
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "amnt",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Buy a specific resource on the market"
+      }
+    },
+    "/market/{station_id}/sell/{resource}/{amnt}": {
+      "post": {
+        "description": "",
+        "responses": {
+          "200": "How much was removed from the cargo, how much money was added, and the amount of fees"
+        },
+        "tags": [
+          "market"
+        ],
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "amnt",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Sell a specific resource on the market"
+      }
+    },
+    "/player/{id}": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "Information about the player, complete if it's you, minimal if it's another player"
+        },
+        "tags": [
+          "player"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Get the status from the player of a given id."
+      }
+    },
+    "/player/new/{name}": {
+      "post": {
+        "description": "The secret key must be used in the \"Simeis-Key\" HTTP header",
+        "responses": {
+          "200": "The ID of the player, and its authentication secret key"
+        },
+        "tags": [
+          "player"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Creates a new player in the game"
+      }
+    },
+    "/ship/{ship_id}": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "The data for the ship"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Get the status of the ship"
+      }
+    },
+    "/ship/{ship_id}/wages": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "The amount of credits consumed each second by the crew of this ship"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Compute how much wages cost per second for this ship"
+      }
+    },
+    "/ship/{ship_id}/travelcost/{x}/{y}/{z}": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "Travel informations on this destination"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "x",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "y",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "z",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Compute how much will cost a travel to a specific position (X, Y, Z)"
+      }
+    },
+    "/ship/{ship_id}/navigate/{x}/{y}/{z}": {
+      "post": {
+        "description": "Ship will have the state InFlight during the travel",
+        "responses": {
+          "200": "Travel informations on the destination"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "x",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "y",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "z",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Navigate to position (X, Y, Z)"
+      }
+    },
+    "/ship/{ship_id}/navigation/stop": {
+      "post": {
+        "description": "",
+        "responses": {
+          "200": "The position where the ship has stopped"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Stop the naviguation, ship will become Idle, and stay in place"
+      }
+    },
+    "/ship/{ship_id}/extraction/start": {
+      "post": {
+        "description": "Ship will have the state \"Extracting\" until its cargo is full",
+        "responses": {
+          "200": "The rate at which every resources are mined, and the time necessary to fill the cargo"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Start the extraction of resources on the planet"
+      }
+    },
+    "/ship/{ship_id}/extraction/stop": {
+      "post": {
+        "description": "",
+        "responses": {
+          "200": "Nothing"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Stop the extraction of resources on the planet, the ship state will be Idle"
+      }
+    },
+    "/ship/{ship_id}/unload/{station_id}/all": {
+      "post": {
+        "description": "",
+        "responses": {
+          "200": "How much of each resource were unloaded, and if the ship cargo is empty or not"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Unload the whole cargo of a ship into a station"
+      }
+    },
+    "/ship/{ship_id}/unload/{station_id}/{resource}/{amount}": {
+      "post": {
+        "description": "Depending on the cargo space available on the station, may not unload anything",
+        "responses": {
+          "200": "How much of this resource was effectively unloaded from the ship"
+        },
+        "tags": [
+          "ship"
+        ],
+        "parameters": [
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "amount",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Unload a specific amount of a specific resource on the station's storage"
+      }
+    },
+    "/station/{station_id}": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "All the informations for the player on this station"
+        },
+        "tags": [
+          "station"
+        ],
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Get status of a station"
+      }
+    },
+    "/station/{station_id}/upgrades": {
+      "get": {
+        "description": "",
+        "responses": {
+          "200": "List of the upgrades available, and their price"
+        },
+        "tags": [
+          "station"
+        ],
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "List the upgrades for a station currently available"
+      }
+    },
+    "/station/{station_id}/scan": {
+      "post": {
+        "description": "",
+        "responses": {
+          "200": "Scan information on all the stellar objects around this station"
+        },
+        "tags": [
+          "station"
+        ],
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Scan for planets around the station"
+      }
+    },
+    "/station/{station_id}/refuel/{ship_id}": {
+      "post": {
+        "description": "",
+        "responses": {
+          "200": "How much fuel was effectively added to the ship (and removed from the station cargo)"
+        },
+        "tags": [
+          "station"
+        ],
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Use fuel in storage on the station to refuel the ship"
+      }
+    },
+    "/station/{station_id}/repair/{ship_id}": {
+      "post": {
+        "description": "",
+        "responses": {
+          "200": "How much hull was effectively used to repair the ship (and removed from the station cargo)"
+        },
+        "tags": [
+          "station"
+        ],
+        "parameters": [
+          {
+            "name": "station_id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "name": "ship_id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "summary": "Use the hull plates in storage on the station to repair the ship"
+      }
+    }
+  }
+}

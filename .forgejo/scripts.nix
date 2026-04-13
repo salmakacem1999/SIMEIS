@@ -17,7 +17,6 @@
       runtimeInputs = deps ++ [ python ];
       text = ''
         export CARGO_HOME=$PWD/.cargohome
-        export RUST_LOG="actix_web=warn"
         cargo build --features testing
         rm -f /tmp/simeis_logs
         ./target/debug/simeis-server 1>/tmp/simeis_logs 2>&1 &
@@ -120,18 +119,30 @@
     };
     in "${app}/bin/check-todos";
 
-    check_api = let
+    apiSanity = let
       app = pkgs.writeShellApplication {
-        name = "check-api";
+        name = "apiSanity";
         runtimeInputs = [ pkgs.ripgrep ];
-        # TODO Gather all the APIs paths to a json file
-        #   Store the @key value into a dict
-        # TODO Search the Rust SDK to ensure every API is hit
-        # TODO Search the Python SDK to ensure every API is hit
-        # TODO Search the func tests to ensure every API is hit
-        # TODO Generate the swagger API inside /doc, ensure everything is documented
         text = ''
+          export CARGO_HOME=$PWD/.cargohome
+          cargo build --features testing
+          rm -f /tmp/simeis_logs
+          ./target/debug/simeis-server 1>/tmp/simeis_logs 2>&1 &
+          sleep 1
+          if [ -z "$(jobs -r)" ]; then
+            echo "!!! Failed to start the server";
+            cat /tmp/simeis_logs
+            exit 1;
+          fi
+          if ! python3 .forgejo/generate_swagger.py 127.0.0.1 9345 "$@"; then
+            echo "Error while generating swagger file"
+            kill "$(jobs -p)"
+            exit 1;
+          fi
+
+          kill "$(jobs -p)"
+          echo "[*] Finished"
         '';
       };
-    in "${app}/bin/check-api";
+    in "${app}/bin/apiSanity";
   }

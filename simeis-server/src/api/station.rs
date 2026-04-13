@@ -15,7 +15,8 @@ use simeis_data::ship::ShipId;
 use crate::api::build_response;
 use crate::api::GameState;
 
-// Get status of a station
+// @summary Get status of a station
+// @returns All the informations for the player on this station
 #[web::get("")]
 async fn get_station_status(
     srv: GameState,
@@ -32,7 +33,8 @@ async fn get_station_status(
     build_response(data)
 }
 
-// Scan for planets around the station
+// @summary Scan for planets around the station
+// @returns Scan information on all the stellar objects around this station
 #[web::post("/scan")]
 async fn scan(id: Path<StationId>, srv: GameState, req: HttpRequest) -> impl web::Responder {
     let pkey = get_player_key!(req);
@@ -45,7 +47,8 @@ async fn scan(id: Path<StationId>, srv: GameState, req: HttpRequest) -> impl web
     build_response(data)
 }
 
-// List the upgrades for a station currently available
+// @summary List the upgrades for a station currently available
+// @returns List of the upgrades available, and their price
 #[web::get("/upgrades")]
 async fn get_station_upgrades(
     srv: GameState,
@@ -70,7 +73,8 @@ async fn get_station_upgrades(
     build_response(data)
 }
 
-// Use fuel in storage on the station to refuel the ship
+// @summary Use fuel in storage on the station to refuel the ship
+// @returns How much fuel was effectively added to the ship (and removed from the station cargo)
 #[web::post("/refuel/{ship_id}")]
 async fn refuel_ship(
     srv: GameState,
@@ -93,7 +97,8 @@ async fn refuel_ship(
     build_response(data)
 }
 
-// Use the hull plates in storage on the station to repair the ship
+// @summary Use the hull plates in storage on the station to repair the ship
+// @returns How much hull was effectively used to repair the ship (and removed from the station cargo)
 #[web::post("/repair/{ship_id}")]
 async fn repair_ship(
     srv: GameState,
