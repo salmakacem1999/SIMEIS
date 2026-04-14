@@ -1557,7 +1557,6 @@ name = "simeis-data"
 version = "0.1.3"
 dependencies = [
  "base64",
- "compio",
  "env_logger",
  "log",
  "mea",

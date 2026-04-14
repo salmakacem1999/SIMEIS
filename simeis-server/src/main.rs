@@ -30,7 +30,15 @@ async fn main() -> std::io::Result<()> {
         .init();
 
     log::info!("Running on http://0.0.0.0:{port}");
-    let (gamethread, state) = Game::init().await;
+    // TODO (#34) Reduce stack size from this task, > 1024
+    let (gamethread, state) = Game::init(|stop, sysrecv, data| {
+        std::thread::spawn(move || {
+            let rt = compio::runtime::Runtime::new().unwrap();
+            rt.block_on(data.start(stop, sysrecv));
+            rt.run();
+        })
+    })
+    .await;
     let stop_chan = state.send_sig.clone();
 
     let res = web::HttpServer::new(async move || {
