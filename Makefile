@@ -8,7 +8,7 @@ build:
 # Compiler en mode release (optimisé)
 release:
 	set RUSTFLAGS=$(RUSTFLAGS) && cargo build --release
-	strip target/release/simeis
+	strip target/release/simeis-server
 
 # Vérifier le code sans compiler
 check:
