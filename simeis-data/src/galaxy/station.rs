@@ -196,7 +196,11 @@ impl Station {
         let pd = self.player_data.clone_val(pid).await.unwrap();
         let mut pd = pd.write().await;
         let Some(cm) = pd.idle_crew.0.remove(&id) else {
-            return Err(Errcode::CrewMemberNotIdle(id));
+            if pd.crew.0.contains_key(&id) {
+                return Err(Errcode::CrewMemberNotIdle(id));
+            }else {
+                return Err(Errcode::CrewMemberNotFound(id));
+            }
         };
 
         pd.crew.0.insert(id, cm);
