@@ -20,7 +20,7 @@ test:
 
 # Compiler la documentation avec typst
 manual:
-	typst compile doc/manual.typ
+	-typst compile doc/manual.typ
 
 # Nettoyer les fichiers de build
 clean:
