@@ -1,13 +1,15 @@
 # Flags de compilation Rust
+# -C code-model=kernel  : optimise le modèle mémoire
+# -C codegen-units=1    : compile en un seul bloc pour meilleures optimisations
 RUSTFLAGS := -C code-model=kernel -C codegen-units=1
 
-# Cible par défaut : compiler le projet
+# Compiler en mode debug
 build:
-	set RUSTFLAGS=$(RUSTFLAGS) && cargo build --verbose
+	RUSTFLAGS="$(RUSTFLAGS)" cargo build --verbose
 
-# Compiler en mode release (optimisé)
+# Compiler en mode release + strip du binaire
 release:
-	set RUSTFLAGS=$(RUSTFLAGS) && cargo build --release --verbose
+	RUSTFLAGS="$(RUSTFLAGS)" cargo build --release --verbose
 	strip target/release/simeis-server
 
 # Vérifier le code sans compiler
