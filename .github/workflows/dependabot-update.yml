@@ -1,0 +1,58 @@
+# Workflow de mise à jour automatique des dépendances
+name: Dependency Update
+
+on:
+  # Déclenchement cyclique tous les lundis à 8h
+  schedule:
+    - cron: '0 8 * * 1'
+  # Déclenchement manuel possible
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Rust
+        run: rustup update stable
+
+      - name: Mettre à jour les dépendances
+        run: cargo update
+
+      - name: Vérifier si des dépendances ont changé
+        id: changes
+        run: |
+          if git diff --quiet Cargo.lock; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Créer ou mettre à jour la PR
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="bot/dependency-updates"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add Cargo.lock
+          git commit -m "chore: mise à jour des dépendances"
+          git push origin "$BRANCH" --force
+
+          # Si la PR n'existe pas encore, on la crée avec le label bot/update
+          if ! gh pr list --head "$BRANCH" --json number | grep -q number; then
+            gh pr create \
+              --title "chore: mise à jour des dépendances" \
+              --body "Mise à jour automatique des dépendances." \
+              --base main \
+              --head "$BRANCH" \
+              --label "bot/update"
+          fi
