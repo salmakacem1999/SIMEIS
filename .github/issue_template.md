@@ -5,8 +5,6 @@ title: ''
 labels: ''
 ---
 
-
-
 ## Description
 
 <!-- Décris clairement le problème ou la fonctionnalité souhaitée -->
