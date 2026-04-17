@@ -3,11 +3,11 @@ RUSTFLAGS := -C code-model=kernel -C codegen-units=1
 
 # Cible par défaut : compiler le projet
 build:
-	set RUSTFLAGS=$(RUSTFLAGS) && cargo build
+	set RUSTFLAGS=$(RUSTFLAGS) && cargo build --verbose
 
 # Compiler en mode release (optimisé)
 release:
-	set RUSTFLAGS=$(RUSTFLAGS) && cargo build --release
+	set RUSTFLAGS=$(RUSTFLAGS) && cargo build --release --verbose
 	strip target/release/simeis-server
 
 # Vérifier le code sans compiler
