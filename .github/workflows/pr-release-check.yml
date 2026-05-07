@@ -3,7 +3,7 @@ name: PR Release Branch Check
 on:
   pull_request:
     branches:
-      - "release/*"  # Déclenché uniquement si la cible est une release
+      - "release/*"
 
 jobs:
   check-source-branch:
@@ -11,27 +11,14 @@ jobs:
     steps:
       - name: Vérifier que la source est main ou bug/*
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           SOURCE: ${{ github.head_ref }}
         run: |
-          # Vérifier si la branche source est autorisée
           if [[ "$SOURCE" == "main" || "$SOURCE" == bug/* ]]; then
             echo "Branche source autorisée : $SOURCE"
             exit 0
           fi
 
-          # Sinon : fermer la PR avec un commentaire
+          # Source non autorisée : on fail pour bloquer le merge
           echo "Branche source non autorisée : $SOURCE"
-
-          # Poster un commentaire explicatif
-          gh pr comment $PR_NUMBER \
-            --body " Cette PR a été fermée automatiquement.
-          
-          Seules les branches \`main\` ou \`bug/*\` peuvent être mergées dans une branche \`release/*\`.
-          Branche source détectée : \`$SOURCE\`"
-
-          # Fermer la PR
-          gh pr close $PR_NUMBER
-
+          echo "Seules main ou bug/* peuvent merger dans release/*"
           exit 1
