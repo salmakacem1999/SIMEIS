@@ -26,4 +26,20 @@ manual:
 
 # Nettoyer les fichiers de build
 clean:
-	cargo clean
+	cargo 
+	
+# Vérifier le format du code Rust
+fmt-check:
+	cargo fmt --check
+
+# Linter Rust (détecte les mauvais schémas)
+clippy:
+	cargo clippy -- -D warnings
+
+# Vérifier le format du code Python (scripts de test)
+py-fmt-check:
+	black --check tests/
+
+# Lancer les tests avec la feature heavy-testing
+test-heavy:
+	cargo test --features heavy-testing

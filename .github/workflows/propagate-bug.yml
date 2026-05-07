@@ -1,0 +1,47 @@
+name: Propagate Bug Fix to Release
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed  # Déclenché quand une PR est fermée (merged ou non)
+
+jobs:
+  propagate:
+    # Seulement si la PR est merged ET source = bug/*
+    if: |
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'bug/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Récupérer tout l'historique
+
+      - name: Propager vers les releases via les labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SOURCE_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # Récupérer tous les labels de la PR mergée
+          LABELS=$(gh pr view $PR_NUMBER --json labels -q '.labels[].name')
+
+          for LABEL in $LABELS; do
+            # Chercher les labels du type propagate:release/x
+            if [[ "$LABEL" == propagate:release/* ]]; then
+              TARGET=${LABEL#propagate:}  # Extraire "release/x"
+              echo "Propagation vers $TARGET"
+
+              # Stocker le body dans une variable pour éviter les problèmes YAML
+              BODY="Propagation automatique du fix $SOURCE_BRANCH vers $TARGET. Declanche par la PR #$PR_NUMBER."
+
+              # Créer une PR vers la branche release cible
+              gh pr create \
+                --base "$TARGET" \
+                --head "$SOURCE_BRANCH" \
+                --title "Propagation: $SOURCE_BRANCH vers $TARGET" \
+                --body "$BODY"
+            fi
+          done
