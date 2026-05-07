@@ -1,0 +1,42 @@
+name: Quality Check
+
+# Déclenché sur toute PR, quelle que soit la branche cible
+on:
+  pull_request:
+    branches: ["*"]
+
+jobs:
+  rust-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Rust avec composants fmt et clippy
+        run: |
+          rustup update stable
+          rustup component add rustfmt clippy
+
+      # Vérification compilation
+      - name: cargo check
+        run: cargo check
+
+      # Vérification format Rust
+      - name: cargo fmt
+        run: cargo fmt --check
+
+      # Linter Rust
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings
+
+  python-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Python et black
+        run: |
+          pip install black
+
+      # Vérification format Python sur les scripts de test
+      - name: black check
+        run: black --check tests/

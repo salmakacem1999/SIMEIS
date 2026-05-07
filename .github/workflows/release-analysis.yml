@@ -1,0 +1,45 @@
+name: Release Advanced Analysis
+
+# Déclenché au merge dans une branche release
+on:
+  push:
+    branches:
+      - "release/*"
+
+jobs:
+  advanced-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Rust
+        run: rustup update stable
+
+      # Tests unitaires avec la feature heavy-testing
+      - name: Tests avec heavy-testing
+        run: cargo test --features heavy-testing
+
+      # Compiler en debug avec heavy-testing pour les tests fonctionnels
+      - name: Build debug avec heavy-testing
+        run: cargo build --features heavy-testing
+
+      # Installer Python pour les tests fonctionnels
+      - name: Installer Python
+        run: pip install black
+
+      # Lancer le script de tests fonctionnels (vide pour l'instant)
+      - name: Tests fonctionnels Python
+        run: python tests/functional_tests.py
+
+      # Audit sécurité des dépendances
+      - name: cargo-audit
+        run: |
+          cargo install cargo-audit
+          cargo audit
+
+      # Vérifier les dépendances inutiles
+      - name: cargo-udeps
+        run: |
+          rustup toolchain install nightly
+          cargo +nightly install cargo-udeps
+          cargo +nightly udeps
