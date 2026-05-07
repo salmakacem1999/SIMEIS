@@ -1,4 +1,3 @@
-// fix: test multi propagation
 use ntex::web::{HttpResponse, ServiceConfig};
 use serde_json::{json, Value};
 use simeis_data::errors::Errcode;
