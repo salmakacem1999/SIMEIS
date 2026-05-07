@@ -27,20 +27,21 @@ jobs:
         run: |
           # Récupérer tous les labels de la PR mergée
           LABELS=$(gh pr view $PR_NUMBER --json labels -q '.labels[].name')
-          
+
           for LABEL in $LABELS; do
             # Chercher les labels du type propagate:release/x
             if [[ "$LABEL" == propagate:release/* ]]; then
               TARGET=${LABEL#propagate:}  # Extraire "release/x"
               echo "Propagation vers $TARGET"
-              
+
+              # Stocker le body dans une variable pour éviter les problèmes YAML
+              BODY="Propagation automatique du fix $SOURCE_BRANCH vers $TARGET. Declanche par la PR #$PR_NUMBER."
+
               # Créer une PR vers la branche release cible
               gh pr create \
                 --base "$TARGET" \
                 --head "$SOURCE_BRANCH" \
-                --title "Propagation: $SOURCE_BRANCH → $TARGET" \
-                --body "Propagation automatique du fix \`$SOURCE_BRANCH\` vers \`$TARGET\`.
-                
-Déclenché par la PR #$PR_NUMBER."
+                --title "Propagation: $SOURCE_BRANCH vers $TARGET" \
+                --body "$BODY"
             fi
           done
