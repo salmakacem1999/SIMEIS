@@ -55,7 +55,6 @@ async fn hire_crew(
     build_response(data)
 }
 
-
 // @summary Fire a new crew member on the station. Must be idle, or will return an error
 // @returns The ID of the fired crew member
 #[web::post("/fire/{crew_id}")]
