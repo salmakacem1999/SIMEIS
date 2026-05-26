@@ -3,34 +3,32 @@ name: PR Tests
 on:
   pull_request:
 
-# Si un nouveau commit est poussé sur la PR pendant que le workflow tourne,
-# on annule l'ancienne exécution et on lance la nouvelle.
+# Cancel previous run if a new commit is pushed on the same PR
 concurrency:
   group: pr-tests-${{ github.head_ref }}
   cancel-in-progress: true
 
 jobs:
 
-  # ── Code coverage ─────────────────────────────────────────────────────────
   coverage:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write   # nécessaire pour gh pr edit
-      issues: write          # nécessaire pour manipuler les labels
+      pull-requests: write
+      issues: write
 
     steps:
       - uses: actions/checkout@v4
 
-      # Installe cargo-tarpaulin, l'outil de mesure de coverage pour Rust
-      - name: Installer cargo-tarpaulin
+      # Install cargo-tarpaulin for Rust code coverage
+      - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
 
-      # Lance les tests Rust et génère un rapport JSON dans coverage/
-      - name: Lancer le coverage
+      # Run tests and generate JSON coverage report
+      - name: Run coverage
         run: cargo tarpaulin --features testing --out Json --output-dir coverage/
 
-      # Lit le % depuis le JSON et gère le label sur la PR
-      - name: Ajouter le label si coverage < 50%
+      # Read coverage % and add label if below 50%
+      - name: Check coverage threshold
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -39,28 +37,26 @@ jobs:
           with open('coverage/tarpaulin-report.json') as f:
               data = json.load(f)
           cov = data.get('coverage', 0)
-          # tarpaulin peut retourner 0.0-1.0 ou 0-100 selon la version
           if cov <= 1.0:
               cov = cov * 100
           print(f'{cov:.2f}')
           ")
-          echo "Coverage : ${COVERAGE}%"
+          echo "Coverage: ${COVERAGE}%"
           if python3 -c "exit(0 if float('${COVERAGE}') < 50 else 1)"; then
-            echo "Coverage insuffisant, ajout du label"
+            echo "Coverage below 50%, adding label"
             gh pr edit "${{ github.event.pull_request.number }}" --add-label "not enough tests"
           else
-            echo "Coverage OK, suppression du label si présent"
+            echo "Coverage OK, removing label if present"
             gh pr edit "${{ github.event.pull_request.number }}" --remove-label "not enough tests" 2>/dev/null || true
           fi
 
-  # ── Property-based tests rapides ─────────────────────────────────────────
   property-tests:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      # Python 3 est déjà disponible sur ubuntu-latest, pas besoin de setup-python
-      # Mode rapide : ~3s par test (sans --heavy)
-      - name: Lancer les property-based tests (mode rapide)
+      # Python 3 is already available on ubuntu-latest
+      # Quick mode: ~3s per test (no --heavy flag)
+      - name: Run property-based tests (quick mode)
         run: python3 tests/propertybased.py
