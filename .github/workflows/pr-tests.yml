@@ -1,0 +1,65 @@
+name: PR Tests
+
+on:
+  pull_request:
+
+# Si un nouveau commit est poussé sur la PR pendant que le workflow tourne,
+# on annule l'ancienne exécution et on lance la nouvelle.
+concurrency:
+  group: pr-tests-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── Code coverage ─────────────────────────────────────────────────────────
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Lancer le coverage
+        run: cargo tarpaulin --features testing --out Json --output-dir coverage/
+
+      - name: Ajouter le label si coverage < 50%
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COVERAGE=$(python3 -c "
+          import json
+          with open('coverage/tarpaulin-report.json') as f:
+              data = json.load(f)
+          cov = data.get('coverage', 0)
+          if cov <= 1.0:
+              cov = cov * 100
+          print(f'{cov:.2f}')
+          ")
+          echo "Coverage : ${COVERAGE}%"
+          if python3 -c "exit(0 if float('${COVERAGE}') < 50 else 1)"; then
+            echo "Coverage insuffisant, ajout du label"
+            gh pr edit "${{ github.event.pull_request.number }}" --add-label "not enough tests"
+          else
+            echo "Coverage OK"
+            gh pr edit "${{ github.event.pull_request.number }}" --remove-label "not enough tests" 2>/dev/null || true
+          fi
+
+  # ── Property-based tests rapides ─────────────────────────────────────────
+  property-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Lancer les property-based tests (100 itérations)
+        run: python3 tests/propertybased.py --iterations 100

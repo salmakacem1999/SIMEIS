@@ -1,0 +1,57 @@
+name: Heavy Tests
+
+on:
+  workflow_dispatch:   # déclenchement manuel
+  push:
+    tags:
+      - "v*"           # déclenchement sur un tag de release (ex: v1.0.0)
+
+jobs:
+
+  # ── Tests fonctionnels ────────────────────────────────────────────────────
+  functional-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer les dépendances Python
+        run: pip install requests
+
+      - name: Compiler le serveur (mode testing)
+        run: cargo build --features testing
+
+      - name: Démarrer le serveur en arrière-plan
+        run: |
+          ./target/debug/simeis-server &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+
+      - name: Attendre que le serveur soit prêt
+        run: |
+          for i in $(seq 1 20); do
+            curl -s http://localhost:9345/market/prices > /dev/null && echo "Serveur prêt" && exit 0
+            sleep 0.5
+          done
+          echo "Serveur non disponible" && exit 1
+
+      - name: Lancer les tests fonctionnels
+        run: python3 tests/functional_tests.py
+
+      - name: Arrêter le serveur
+        if: always()
+        run: kill $SERVER_PID 2>/dev/null || true
+
+  # ── Property-based tests lourds ───────────────────────────────────────────
+  property-tests-heavy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Lancer les property-based tests (10000 itérations)
+        run: python3 tests/propertybased.py --iterations 10000
