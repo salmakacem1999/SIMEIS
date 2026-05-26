@@ -15,18 +15,21 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
-      issues: write
+      pull-requests: write   # nécessaire pour gh pr edit
+      issues: write          # nécessaire pour manipuler les labels
 
     steps:
       - uses: actions/checkout@v4
 
+      # Installe cargo-tarpaulin, l'outil de mesure de coverage pour Rust
       - name: Installer cargo-tarpaulin
         run: cargo install cargo-tarpaulin
 
+      # Lance les tests Rust et génère un rapport JSON dans coverage/
       - name: Lancer le coverage
         run: cargo tarpaulin --features testing --out Json --output-dir coverage/
 
+      # Lit le % depuis le JSON et gère le label sur la PR
       - name: Ajouter le label si coverage < 50%
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,6 +39,7 @@ jobs:
           with open('coverage/tarpaulin-report.json') as f:
               data = json.load(f)
           cov = data.get('coverage', 0)
+          # tarpaulin peut retourner 0.0-1.0 ou 0-100 selon la version
           if cov <= 1.0:
               cov = cov * 100
           print(f'{cov:.2f}')
@@ -45,7 +49,7 @@ jobs:
             echo "Coverage insuffisant, ajout du label"
             gh pr edit "${{ github.event.pull_request.number }}" --add-label "not enough tests"
           else
-            echo "Coverage OK"
+            echo "Coverage OK, suppression du label si présent"
             gh pr edit "${{ github.event.pull_request.number }}" --remove-label "not enough tests" 2>/dev/null || true
           fi
 
@@ -56,10 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Lancer les property-based tests (100 itérations)
-        run: python3 tests/propertybased.py --iterations 100
+      # Python 3 est déjà disponible sur ubuntu-latest, pas besoin de setup-python
+      # Mode rapide : ~3s par test (sans --heavy)
+      - name: Lancer les property-based tests (mode rapide)
+        run: python3 tests/propertybased.py
