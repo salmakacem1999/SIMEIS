@@ -12,16 +12,21 @@ import string
 
 BASE_URL = "http://localhost:9345"
 
+
 def unique_name(base):
     """Génère un nom unique pour éviter les conflits entre runs"""
     suffix = "".join(random.choices(string.ascii_lowercase, k=6))
     return f"{base}-{suffix}"
+
+
 INIT_MONEY = 72000.0
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def headers(key):
     return {"Simeis-Key": key}
+
 
 def create_player(name):
     r = requests.post(f"{BASE_URL}/player/new/{name}")
@@ -29,23 +34,31 @@ def create_player(name):
     assert data["error"] == "ok", f"Création joueur échouée: {data}"
     return data["playerId"], data["key"]
 
+
 def get_player(player_id, key):
     r = requests.get(f"{BASE_URL}/player/{player_id}", headers=headers(key))
     data = r.json()
     assert data["error"] == "ok", f"get_player échoué: {data}"
     return data
 
+
 def list_ships(station_id, key):
-    r = requests.get(f"{BASE_URL}/station/{station_id}/shipyard/list", headers=headers(key))
+    r = requests.get(
+        f"{BASE_URL}/station/{station_id}/shipyard/list", headers=headers(key)
+    )
     data = r.json()
     assert data["error"] == "ok", f"list_ships échoué: {data}"
     return data["ships"]
 
+
 def buy_ship(station_id, ship_id, key):
-    r = requests.post(f"{BASE_URL}/station/{station_id}/shipyard/buy/{ship_id}", headers=headers(key))
+    r = requests.post(
+        f"{BASE_URL}/station/{station_id}/shipyard/buy/{ship_id}", headers=headers(key)
+    )
     data = r.json()
     assert data["error"] == "ok", f"buy_ship échoué: {data}"
     return data["id"]
+
 
 def wait_for_server():
     for i in range(20):
@@ -59,7 +72,9 @@ def wait_for_server():
     print("Serveur non disponible")
     sys.exit(1)
 
+
 # ── Scénario 1 : Création de joueur ─────────────────────────────────────────
+
 
 def scenario_1_creation_joueur():
     """
@@ -74,8 +89,9 @@ def scenario_1_creation_joueur():
     info = get_player(player_id, key)
 
     # Vérifier l'argent de départ
-    assert abs(info["money"] - INIT_MONEY) < 1.0, \
-        f"Argent initial wrong: attendu {INIT_MONEY}, eu {info['money']}"
+    assert (
+        abs(info["money"] - INIT_MONEY) < 1.0
+    ), f"Argent initial wrong: attendu {INIT_MONEY}, eu {info['money']}"
     print(f"  Argent de départ OK : {info['money']}")
 
     # Vérifier pas de vaisseaux
@@ -90,7 +106,9 @@ def scenario_1_creation_joueur():
 
     print("Scénario 1 OK ✓")
 
+
 # ── Scénario 2 : Achat d'un vaisseau ────────────────────────────────────────
+
 
 def scenario_2_achat_vaisseau():
     """
@@ -121,8 +139,9 @@ def scenario_2_achat_vaisseau():
     info_apres = get_player(player_id, key)
     money_apres = info_apres["money"]
     assert money_apres < money_avant, "L'argent devrait avoir diminué"
-    assert abs((money_avant - money_apres) - ship["price"]) < 1.0, \
-        f"Mauvaise déduction: attendu {ship['price']}, eu {money_avant - money_apres}"
+    assert (
+        abs((money_avant - money_apres) - ship["price"]) < 1.0
+    ), f"Mauvaise déduction: attendu {ship['price']}, eu {money_avant - money_apres}"
     print(f"  Argent après : {money_apres} (diminué de {money_avant - money_apres}) OK")
 
     # Vérifier que le joueur a maintenant au moins un vaisseau
@@ -131,7 +150,9 @@ def scenario_2_achat_vaisseau():
 
     print("Scénario 2 OK ✓")
 
+
 # ── Scénario 3 : Achat refusé si pas assez d'argent ─────────────────────────
+
 
 def scenario_3_achat_impossible():
     """
@@ -154,13 +175,14 @@ def scenario_3_achat_impossible():
     ships = list_ships(station_id, key)
     ship_cher = max(ships, key=lambda s: s["price"])
     print(f"  Vaisseau le plus cher : prix={ship_cher['price']}")
-    assert ship_cher["price"] > money_avant, \
-        "Ce test nécessite un vaisseau plus cher que l'argent du joueur"
+    assert (
+        ship_cher["price"] > money_avant
+    ), "Ce test nécessite un vaisseau plus cher que l'argent du joueur"
 
     # Tenter l'achat → doit échouer
     r = requests.post(
         f"{BASE_URL}/station/{station_id}/shipyard/buy/{ship_cher['id']}",
-        headers=headers(key)
+        headers=headers(key),
     )
     data = r.json()
     assert data["error"] != "ok", f"L'achat devrait avoir échoué: {data}"
@@ -168,11 +190,13 @@ def scenario_3_achat_impossible():
 
     # L'argent ne doit pas avoir bougé
     info_apres = get_player(player_id, key)
-    assert abs(info_apres["money"] - money_avant) < 1.0, \
-        "L'argent ne devrait pas avoir changé"
+    assert (
+        abs(info_apres["money"] - money_avant) < 1.0
+    ), "L'argent ne devrait pas avoir changé"
     print(f"  Argent inchangé OK : {info_apres['money']}")
 
     print("Scénario 3 OK ✓")
+
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
@@ -193,7 +217,7 @@ if __name__ == "__main__":
             print(f"ECHEC : {e}")
             echecs.append(s.__name__)
 
-    print("\n" + "="*40)
+    print("\n" + "=" * 40)
     if echecs:
         print(f"ECHECS : {echecs}")
         sys.exit(1)
