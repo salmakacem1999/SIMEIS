@@ -21,8 +21,8 @@ jobs:
         with:
           path: |
             ~/.cargo/registry
-            ~/.cargo/git
-            target
+            ~/.cargo/git # les dépendances git
+            target # tout ce qui est déjà compilé
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - run: rustup update stable
       - name: Format check
@@ -49,7 +49,7 @@ jobs:
       - name: Clippy
         run: make clippy
       - name: Annuler le run si echec
-        if: failure()
+        if: failure()   # ne s'exécute QUE si une étape précédente a planté
         run: gh run cancel ${{ github.run_id }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
