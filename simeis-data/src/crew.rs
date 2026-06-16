@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use strum::{EnumString, IntoStaticStr};
 
-const WAGE_INC_RANK_POWF: f64 = 0.85;                                                                                                                                                                                                                                                                                                                                              
+const WAGE_INC_RANK_POWF: f64 = 0.85;
 const RANK_PRICE_WAGE_MULT: f64 = 1900.0;
 
 pub type CrewId = u32;
