@@ -1,13 +1,15 @@
 name: Release
 
+# Déclenché à chaque merge (= push) sur une branche release/x,
+# même évènement que release-analysis.yml déjà présent dans le repo
 on:
   push:
     branches:
       - "release/*"
 
 permissions:
-  contents: write
-  pull-requests: read
+  contents: write      # nécessaire pour créer/modifier une release GitHub
+  pull-requests: read  # nécessaire pour lister les PR via gh pr list
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # historique complet : nécessaire pour retrouver les tags précédents
 
       - uses: actions/cache@v4
         with:
@@ -31,6 +33,7 @@ jobs:
       - run: rustup update stable
 
       # --- 1. Déterminer le tag de la release à partir du nom de la branche ---
+      # release/1.0 -> v1.0
       - name: Déterminer le tag de la release
         id: version
         run: |
@@ -46,6 +49,46 @@ jobs:
           mkdir -p dist
           tar -czf "dist/simeis-server-${{ steps.version.outputs.tag }}-linux-x86_64.tar.gz" \
             -C target/release simeis-server
+
+      # --- 2bis. Construire le paquet Debian (.deb) ---
+      - name: Installer fakeroot
+        run: sudo apt-get update -qq && sudo apt-get install -y fakeroot
+
+      - name: Construire le paquet Debian
+        run: |
+          # Version Debian : "v1.2" -> "1.2-1" (upstream_version-debian_revision)
+          DEB_VERSION="${{ steps.version.outputs.tag }}"
+          DEB_VERSION="${DEB_VERSION#v}-1"
+
+          # Arborescence de staging temporaire (≠ packaging/debian/ qui ne
+          # contient que les fichiers sources versionnés dans le repo)
+          mkdir -p pkgroot/DEBIAN pkgroot/usr/bin \
+            pkgroot/usr/share/man/man8 pkgroot/etc/systemd/system
+
+          # control avec la version substituée
+          sed "s/VERSION_PLACEHOLDER/$DEB_VERSION/" \
+            packaging/debian/control > pkgroot/DEBIAN/control
+
+          # scripts de maintenance (création user système + service systemd)
+          cp packaging/debian/postinst pkgroot/DEBIAN/postinst
+          cp packaging/debian/prerm pkgroot/DEBIAN/prerm
+          chmod 755 pkgroot/DEBIAN/postinst pkgroot/DEBIAN/prerm
+
+          # binaire compilé à l'étape précédente
+          cp target/release/simeis-server pkgroot/usr/bin/simeis-server
+          chmod 755 pkgroot/usr/bin/simeis-server
+
+          # page de man, compressée (convention Debian)
+          gzip -9 -c packaging/debian/simeis-server.8 \
+            > pkgroot/usr/share/man/man8/simeis-server.8.gz
+
+          # unité systemd
+          cp packaging/debian/simeis-server.service \
+            pkgroot/etc/systemd/system/simeis-server.service
+
+          find pkgroot -type d -exec chmod 755 {} \;
+
+          fakeroot dpkg-deb --build pkgroot "dist/simeis_${DEB_VERSION}_amd64.deb"
 
       # --- 3. Générer le changelog à partir des PR mergées depuis la dernière release ---
       - name: Générer le changelog
@@ -89,6 +132,7 @@ jobs:
 
       # --- 4. Créer la release si elle n'existe pas encore, sinon la mettre à jour ---
       # (plusieurs PR peuvent merger successivement dans la même branche release/x)
+      # Action recommandée par le sujet : crée OU met à jour automatiquement.
       - name: Créer ou mettre à jour la release GitHub
         uses: mini-bomba/create-github-release@v1.2.0
         with:
@@ -98,4 +142,5 @@ jobs:
           body: ${{ steps.changelog.outputs.body }}
           files: |
             dist/*.tar.gz
+            dist/*.deb
           clear_attachments: true

@@ -1,0 +1,24 @@
+.TH SIMEIS-SERVER 8 "2026" "simeis" "Simeis manual"
+.SH NAME
+simeis-server \- serveur du jeu Simeis (jeu par API inspire de SpaceTraders)
+.SH SYNOPSIS
+.B simeis-server
+.SH DESCRIPTION
+Simeis est un jeu par API dans lequel les joueurs developpent un empire
+economique spatial en envoyant des requetes HTTP au serveur.
+.PP
+.B simeis-server
+ne prend aucun argument en ligne de commande et ecoute par defaut sur
+le port 8080. Le niveau de verbosite des logs se regle via la variable
+d'environnement
+.BR RUST_LOG .
+.SH FILES
+.TP
+.I /etc/systemd/system/simeis-server.service
+Unite systemd permettant de demarrer, arreter et activer le service
+au boot.
+.SH SEE ALSO
+.BR systemctl (1),
+.BR systemd (1)
+.SH AUTHOR
+Kacem Salma, Luce Makaya

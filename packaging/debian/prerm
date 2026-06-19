@@ -1,0 +1,18 @@
+#!/bin/sh
+# prerm : exécuté avant que dpkg ne retire les fichiers du paquet.
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
+    if systemctl is-active --quiet simeis-server.service; then
+        systemctl stop simeis-server.service
+    fi
+
+    # On ne désactive qu'à la suppression complète, pas lors d'une
+    # simple mise à jour (sinon le service resterait désactivé après
+    # l'upgrade)
+    if [ "$1" = "remove" ]; then
+        systemctl disable simeis-server.service || true
+    fi
+fi
+
+exit 0
