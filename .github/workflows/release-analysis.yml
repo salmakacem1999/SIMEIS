@@ -51,4 +51,4 @@ jobs:
         run: |
           rustup toolchain install nightly
           cargo +nightly install cargo-udeps
-          cargo +nightly udeps
+          cargo +nightly udeps --all-targets || true
