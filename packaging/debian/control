@@ -4,7 +4,7 @@ Section: contrib/games
 Priority: optional
 Architecture: amd64
 Depends: cmatrix
-Maintainer: Kacem Salma & Luce Makaya <noreply@example.com>
+Maintainer: Kacem Salma & Luce Makaya <selmakacem199@gmail.com>
 Description: Serveur du jeu Simeis, un jeu par API
  Simeis est un jeu par API inspire de SpaceTraders, dont le but est
  de faire fructifier un empire economique a travers la galaxie.

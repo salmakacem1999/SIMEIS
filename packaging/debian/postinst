@@ -8,6 +8,10 @@ if [ "$1" = "configure" ]; then
             --shell /usr/sbin/nologin simeis
     fi
 
+    # Donner les bons droits sur le binaire
+    chown root:root /usr/bin/simeis-server
+    chmod 755 /usr/bin/simeis-server
+
     # Recharge la configuration systemd, active le service au boot,
     # puis le démarre immédiatement
     systemctl daemon-reload

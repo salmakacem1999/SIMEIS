@@ -11,5 +11,10 @@ Restart=on-failure
 RestartSec=5
 Environment=RUST_LOG=info
 
+# Sécurité : restreindre les droits du processus
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
 [Install]
 WantedBy=multi-user.target
