@@ -5,6 +5,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY simeis-data ./simeis-data
 COPY simeis-server ./simeis-server
+COPY doc ./doc
 
 RUN cargo build --release -p simeis-server
 

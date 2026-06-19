@@ -1,6 +1,5 @@
 name: Release Advanced Analysis
 
-# Déclenché au merge dans une branche release
 on:
   push:
     branches:
@@ -15,29 +14,39 @@ jobs:
       - name: Installer Rust
         run: rustup update stable
 
-      # Tests unitaires avec la feature heavy-testing
       - name: Tests avec heavy-testing
         run: cargo test --features heavy-testing
 
-      # Compiler en debug avec heavy-testing pour les tests fonctionnels
       - name: Build debug avec heavy-testing
         run: cargo build --features heavy-testing
 
-      # Installer Python pour les tests fonctionnels
       - name: Installer Python
-        run: pip install black
+        run: pip install requests
 
-      # Lancer le script de tests fonctionnels (vide pour l'instant)
+      - name: Lancer le serveur en arrière-plan
+        run: |
+          cargo run --features testing &
+          echo $! > server.pid
+
+      - name: Attendre que le serveur soit prêt
+        run: |
+          for i in $(seq 1 20); do
+            curl -s http://localhost:9345/ && break || true
+            sleep 1
+          done
+
       - name: Tests fonctionnels Python
         run: python tests/functional_tests.py
 
-      # Audit sécurité des dépendances
+      - name: Arrêter le serveur
+        if: always()
+        run: kill $(cat server.pid) || true
+
       - name: cargo-audit
         run: |
           cargo install cargo-audit
           cargo audit
 
-      # Vérifier les dépendances inutiles
       - name: cargo-udeps
         run: |
           rustup toolchain install nightly
