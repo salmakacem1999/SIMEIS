@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - "release/*"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: rustup update stable
+
+      # --- 1. Déterminer le tag de la release à partir du nom de la branche ---
+      - name: Déterminer le tag de la release
+        id: version
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/release/}"
+          echo "tag=v$BRANCH" >> "$GITHUB_OUTPUT"
+
+      # --- 2. Compiler le binaire et préparer l'artefact ---
+      - name: Build release
+        run: make release
+
+      - name: Préparer l'archive du binaire
+        run: |
+          mkdir -p dist
+          tar -czf "dist/simeis-server-${{ steps.version.outputs.tag }}-linux-x86_64.tar.gz" \
+            -C target/release simeis-server
+
+      # --- 3. Générer le changelog à partir des PR mergées depuis la dernière release ---
+      - name: Générer le changelog
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Tag existant le plus récent (vide si c'est la toute première release)
+          PREV_TAG=$(git tag --sort=-creatordate | head -n1)
+
+          if [ -n "$PREV_TAG" ]; then
+            SINCE=$(git log -1 --format=%aI "$PREV_TAG")
+          else
+            SINCE="2000-01-01T00:00:00"
+          fi
+
+          # PR mergées depuis cette date, avec leur branche source (pour les catégoriser)
+          gh pr list --state merged --search "merged:>$SINCE" \
+            --json number,title,url,headRefName --limit 200 > prs.json
+
+          {
+            echo "## Changements${PREV_TAG:+ depuis $PREV_TAG}"
+            echo
+            echo "### Features"
+            jq -r '.[] | select(.headRefName | startswith("feature/")) | "- [\(.title)](\(.url))"' prs.json
+            echo
+            echo "### Bugfix"
+            jq -r '.[] | select(.headRefName | startswith("bug/")) | "- [\(.title)](\(.url))"' prs.json
+            echo
+            echo "### Autre"
+            jq -r '.[] | select(.headRefName | (startswith("feature/") or startswith("bug/")) | not) | "- [\(.title)](\(.url))"' prs.json
+          } > changelog.md
+
+          # On expose le contenu du changelog en output multiligne,
+          # pour pouvoir le passer en "body" à l'action de release ci-dessous
+          {
+            echo "body<<EOF"
+            cat changelog.md
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # --- 4. Créer la release si elle n'existe pas encore, sinon la mettre à jour ---
+      # (plusieurs PR peuvent merger successivement dans la même branche release/x)
+      - name: Créer ou mettre à jour la release GitHub
+        uses: mini-bomba/create-github-release@v1.2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body: ${{ steps.changelog.outputs.body }}
+          files: |
+            dist/*.tar.gz
+          clear_attachments: true
