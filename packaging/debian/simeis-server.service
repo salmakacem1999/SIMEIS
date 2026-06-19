@@ -1,0 +1,20 @@
+[Unit]
+Description=Simeis - serveur du jeu par API
+After=network.target
+
+[Service]
+Type=simple
+User=simeis
+Group=simeis
+ExecStart=/usr/bin/simeis-server
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+
+# Sécurité : restreindre les droits du processus
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    # Crée l'utilisateur système "simeis" s'il n'existe pas déjà
+    if ! getent passwd simeis >/dev/null 2>&1; then
+        adduser --system --group --no-create-home \
+            --shell /usr/sbin/nologin simeis
+    fi
+
+    # Donner les bons droits sur le binaire
+    chown root:root /usr/bin/simeis-server
+    chmod 755 /usr/bin/simeis-server
+
+    # Recharge la configuration systemd, active le service au boot,
+    # puis le démarre immédiatement
+    systemctl daemon-reload
+    systemctl enable simeis-server.service
+    systemctl restart simeis-server.service
+fi
+
+exit 0
