@@ -99,7 +99,7 @@ jobs:
  
       - name: Tester l'image Docker
         run: |
-          docker run -d --name simeis-test -p 8080:8080 simeis-server:${{ steps.version.outputs.tag }}
+          docker run -d --name simeis-test --privileged -p 8080:8080 simeis-server:${{ steps.version.outputs.tag }}
           sleep 10
           docker logs simeis-test
           curl --fail http://localhost:8080/ || curl --fail --max-time 5 http://localhost:8080/status
