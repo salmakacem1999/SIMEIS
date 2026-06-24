@@ -8,8 +8,8 @@ on:
       - "release/*"
 
 permissions:
-  contents: write      # nécessaire pour créer/modifier une release GitHub
-  pull-requests: read  # nécessaire pour lister les PR via gh pr list
+  contents: write # nécessaire pour créer/modifier une release GitHub
+  pull-requests: read # nécessaire pour lister les PR via gh pr list
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # historique complet : nécessaire pour retrouver les tags précédents
+          fetch-depth: 0 # historique complet : nécessaire pour retrouver les tags précédents
 
       - uses: actions/cache@v4
         with:
@@ -89,34 +89,34 @@ jobs:
           find pkgroot -type d -exec chmod 755 {} \;
 
           fakeroot dpkg-deb --build pkgroot "dist/simeis_${DEB_VERSION}_amd64.deb"
-      
+
       - name: Construire l'image Docker
         run: |
           docker build \
             --build-arg VERSION=${{ steps.version.outputs.tag }} \
             -t simeis-server:${{ steps.version.outputs.tag }} \
             -f .github/Dockerfile .
- 
+
       - name: Tester l'image Docker
         run: |
-          docker run -d --name simeis-test --privileged -p 8080:8080 simeis-server:${{ steps.version.outputs.tag }}
+          docker run -d --name simeis-test --privileged -p 8181:8181 simeis-server:${{ steps.version.outputs.tag }}
           sleep 10
           docker logs simeis-test
-          curl --fail http://localhost:8080/ || curl --fail --max-time 5 http://localhost:8080/status
+          curl --fail http://localhost:8181/ || curl --fail --max-time 5 http://localhost:8181/status
           docker stop simeis-test
           docker rm simeis-test
- 
+
       - name: Sauvegarder l'image Docker
         run: |
           docker image save simeis-server:${{ steps.version.outputs.tag }} \
             -o dist/simeis-server-${{ steps.version.outputs.tag }}-docker.tar
- 
+
       - name: Uploader l'image Docker comme artefact
         uses: actions/upload-artifact@v4
         with:
           name: simeis-docker-image-${{ steps.version.outputs.tag }}
           path: dist/simeis-server-${{ steps.version.outputs.tag }}-docker.tar
- 
+
       - name: Pousser l'image sur DockerHub
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
