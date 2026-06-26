@@ -50,18 +50,16 @@ jobs:
           tar -czf "dist/simeis-server-${{ steps.version.outputs.tag }}-linux-x86_64.tar.gz" \
             -C target/release simeis-server
 
-      # --- 2bis. Construire le paquet Debian (.deb) ---
+      # --- 3. Construire le paquet Debian (.deb) ---
       - name: Installer fakeroot
         run: sudo apt-get update -qq && sudo apt-get install -y fakeroot
 
       - name: Construire le paquet Debian
         run: |
-          # Version Debian : "v1.2" -> "1.2-1" (upstream_version-debian_revision)
+          # "v0.2.0" -> "0.2.0-1"
           DEB_VERSION="${{ steps.version.outputs.tag }}"
           DEB_VERSION="${DEB_VERSION#v}-1"
 
-          # Arborescence de staging temporaire (≠ packaging/debian/ qui ne
-          # contient que les fichiers sources versionnés dans le repo)
           mkdir -p pkgroot/DEBIAN pkgroot/usr/bin \
             pkgroot/usr/share/man/man8 pkgroot/etc/systemd/system
 
@@ -71,7 +69,7 @@ jobs:
 
           # scripts de maintenance (création user système + service systemd)
           cp packaging/debian/postinst pkgroot/DEBIAN/postinst
-          cp packaging/debian/prerm pkgroot/DEBIAN/prerm
+          cp packaging/debian/prerm    pkgroot/DEBIAN/prerm
           chmod 755 pkgroot/DEBIAN/postinst pkgroot/DEBIAN/prerm
 
           # binaire compilé à l'étape précédente
@@ -119,30 +117,74 @@ jobs:
 
       - name: Pousser l'image sur DockerHub
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" \
+            | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker tag simeis-server:${{ steps.version.outputs.tag }} \
             ${{ secrets.DOCKERHUB_USERNAME }}/simeis-server:${{ steps.version.outputs.tag }}
           docker tag simeis-server:${{ steps.version.outputs.tag }} \
             ${{ secrets.DOCKERHUB_USERNAME }}/simeis-server:latest
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/simeis-server:${{ steps.version.outputs.tag }}
+          docker push \
+            ${{ secrets.DOCKERHUB_USERNAME }}/simeis-server:${{ steps.version.outputs.tag }}
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/simeis-server:latest
 
-      # --- 3. Générer le changelog à partir des PR mergées depuis la dernière release ---
+      # --- 7. Déploiement SSH sur le VPS ---
+      # Secrets requis : SSH_PRIVATE_KEY
+      # Variables requises : VPS_HOST, VPS_SSH_PORT, VPS_USER
+      - name: Préparer la clé SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          # Désactive la vérification stricte du host pour éviter un blocage
+          # si la clé du serveur n'est pas encore dans known_hosts
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Copier le .deb sur le VPS via scp
+        run: |
+          DEB_VERSION="${{ steps.version.outputs.tag }}"
+          DEB_VERSION="${DEB_VERSION#v}-1"
+          # On relit le nom depuis control pour rester cohérent
+          PKG_NAME=$(grep "^Package:" packaging/debian/control | awk '{print $2}')
+          scp -P ${{ vars.VPS_SSH_PORT }} \
+            dist/${PKG_NAME}_${DEB_VERSION}_amd64.deb \
+            ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }}:~/simeis-latest.deb
+
+      - name: Installer le .deb sur le VPS
+        run: |
+          ssh -p ${{ vars.VPS_SSH_PORT }} \
+            ${{ vars.VPS_USER }}@${{ vars.VPS_HOST }} \
+            "sudo apt-get install -y -f ~/simeis-latest.deb"
+
+      # --- 8. Test post-déploiement : version et connectivité ---
+      # On attend que le service redémarre, puis on vérifie que /version
+      # retourne bien le numéro de version attendu.
+      # Si ce n'est pas le cas, le job échoue.
+      - name: Vérifier le déploiement sur le VPS
+        run: |
+          sleep 5
+          EXPECTED="${{ steps.version.outputs.tag }}"
+          EXPECTED="${EXPECTED#v}"
+          ACTUAL=$(curl --fail --max-time 10 \
+            "http://${{ vars.VPS_HOST }}:8081/version" \
+            | jq -r '.version')
+          echo "Version attendue : $EXPECTED"
+          echo "Version obtenue  : $ACTUAL"
+          [ "$ACTUAL" = "$EXPECTED" ] || exit 1
+          echo "Déploiement validé : version $ACTUAL en ligne sur le VPS"
+
+      # --- 9. Générer le changelog à partir des PR mergées depuis la dernière release ---
       - name: Générer le changelog
         id: changelog
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Tag existant le plus récent (vide si c'est la toute première release)
           PREV_TAG=$(git tag --sort=-creatordate | head -n1)
-
           if [ -n "$PREV_TAG" ]; then
             SINCE=$(git log -1 --format=%aI "$PREV_TAG")
           else
             SINCE="2000-01-01T00:00:00"
           fi
 
-          # PR mergées depuis cette date, avec leur branche source (pour les catégoriser)
           gh pr list --state merged --search "merged:>$SINCE" \
             --json number,title,url,headRefName --limit 200 > prs.json
 
@@ -156,20 +198,18 @@ jobs:
             jq -r '.[] | select(.headRefName | startswith("bug/")) | "- [\(.title)](\(.url))"' prs.json
             echo
             echo "### Autre"
-            jq -r '.[] | select(.headRefName | (startswith("feature/") or startswith("bug/")) | not) | "- [\(.title)](\(.url))"' prs.json
+            jq -r '.[] | select(.headRefName | (startswith("feature/") or startswith("bug/")) | not) \
+              | "- [\(.title)](\(.url))"' prs.json
           } > changelog.md
 
-          # On expose le contenu du changelog en output multiligne,
-          # pour pouvoir le passer en "body" à l'action de release ci-dessous
           {
             echo "body<<EOF"
             cat changelog.md
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      # --- 4. Créer la release si elle n'existe pas encore, sinon la mettre à jour ---
-      # (plusieurs PR peuvent merger successivement dans la même branche release/x)
-      # Action recommandée par le sujet : crée OU met à jour automatiquement.
+      # --- 10. Créer ou mettre à jour la release GitHub ---
+      # Les trois types de fichiers sont attachés : binaire, .deb, image Docker
       - name: Créer ou mettre à jour la release GitHub
         uses: mini-bomba/create-github-release@v1.2.0
         with:
@@ -179,6 +219,6 @@ jobs:
           body: ${{ steps.changelog.outputs.body }}
           files: |
             dist/*.tar.gz
-            dist/*.deb
             dist/*.tar
+            dist/*.deb
           clear_attachments: true
