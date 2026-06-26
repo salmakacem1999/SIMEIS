@@ -8,8 +8,8 @@ on:
       - "release/*"
 
 permissions:
-  contents: write      # nécessaire pour créer/modifier une release GitHub
-  pull-requests: read  # nécessaire pour lister les PR via gh pr list
+  contents: write # nécessaire pour créer/modifier une release GitHub
+  pull-requests: read # nécessaire pour lister les PR via gh pr list
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # historique complet : nécessaire pour retrouver les tags précédents
+          fetch-depth: 0 # historique complet : nécessaire pour retrouver les tags précédents
 
       - uses: actions/cache@v4
         with:
@@ -86,12 +86,8 @@ jobs:
 
           find pkgroot -type d -exec chmod 755 {} \;
 
-          # Le nom du paquet est lu depuis control pour rester cohérent
-          # avec packaging/debian/control (ex: simeis-luce)
-          PKG_NAME=$(grep "^Package:" pkgroot/DEBIAN/control | awk '{print $2}')
-          fakeroot dpkg-deb --build pkgroot "dist/${PKG_NAME}_${DEB_VERSION}_amd64.deb"
+          fakeroot dpkg-deb --build pkgroot "dist/simeis_${DEB_VERSION}_amd64.deb"
 
-      # --- 4. Construire l'image Docker ---
       - name: Construire l'image Docker
         run: |
           docker build \
@@ -99,22 +95,25 @@ jobs:
             -t simeis-server:${{ steps.version.outputs.tag }} \
             -f .github/Dockerfile .
 
-      # --- 5. Tester l'image Docker ---
-      # On lance le container, on vérifie que /ping répond sur le bon port,
-      # puis on le stoppe. Si curl échoue, le step échoue et bloque la release.
       - name: Tester l'image Docker
         run: |
-          docker run -d --name simeis-test -p 8081:8081 \
-            simeis-server:${{ steps.version.outputs.tag }}
-          sleep 5
-          curl --fail --max-time 10 http://localhost:8081/ping
-          docker stop simeis-test && docker rm simeis-test
+          docker run -d --name simeis-test --privileged -p 8181:8181 simeis-server:${{ steps.version.outputs.tag }}
+          sleep 10
+          docker logs simeis-test
+          curl --fail http://localhost:8181/ || curl --fail --max-time 5 http://localhost:8181/status
+          docker stop simeis-test
+          docker rm simeis-test
 
-      # --- 6. Sauvegarder l'image Docker et la pousser sur Docker Hub ---
       - name: Sauvegarder l'image Docker
         run: |
           docker image save simeis-server:${{ steps.version.outputs.tag }} \
             -o dist/simeis-server-${{ steps.version.outputs.tag }}-docker.tar
+
+      - name: Uploader l'image Docker comme artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: simeis-docker-image-${{ steps.version.outputs.tag }}
+          path: dist/simeis-server-${{ steps.version.outputs.tag }}-docker.tar
 
       - name: Pousser l'image sur DockerHub
         run: |
