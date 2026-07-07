@@ -1,0 +1,40 @@
+#!/bin/bash
+FAILED=0
+
+          # Chercher tous les TODO dans le code (exclure .git et le workflow lui-même)
+          grep -rn "TODO" --include="*.rs" --include="*.py" --include="*.toml" . \
+            | grep -v ".git" > /tmp/todos.txt || true
+
+          while IFS= read -r line; do
+            FILE=$(echo "$line" | cut -d: -f1)
+            LINENUM=$(echo "$line" | cut -d: -f2)
+            CONTENT=$(echo "$line" | cut -d: -f3-)
+
+            # Cas 1 : TODO avec issue liée ex: TODO (#15)
+            if echo "$CONTENT" | grep -qE "TODO \(#[0-9]+\)"; then
+              ISSUE_NUM=$(echo "$CONTENT" | grep -oE "#[0-9]+" | tr -d '#')
+              
+              # Vérifier que l'issue existe et est ouverte
+              STATE=$(gh issue view $ISSUE_NUM --repo $REPO --json state -q '.state' 2>/dev/null || echo "NOT_FOUND")
+              
+              if [[ "$STATE" == "NOT_FOUND" ]]; then
+                echo " $FILE:$LINENUM - Issue #$ISSUE_NUM introuvable"
+                echo " "$STATE" "
+                FAILED=1
+              elif [[ "$STATE" == "CLOSED" ]]; then
+                echo " $FILE:$LINENUM - Issue #$ISSUE_NUM est fermée"
+                FAILED=1
+              else
+                echo " $FILE:$LINENUM - Issue #$ISSUE_NUM ouverte"
+              fi
+
+            # Cas 2 : TODO sans issue liée
+            else
+              echo " $FILE:$LINENUM - TODO sans issue : $CONTENT"
+              FAILED=1
+            fi
+
+          done < /tmp/todos.txt
+
+          # Fail le workflow si un TODO est invalide
+          exit $FAILED
