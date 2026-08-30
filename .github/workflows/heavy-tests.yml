@@ -8,7 +8,7 @@ on:
 
 jobs:
 
-  # ── Tests fonctionnels ────────────────────────────────────────────────────
+  # Tests fonctionnels
   functional-tests:
     runs-on: ubuntu-latest
 
@@ -41,7 +41,7 @@ jobs:
         if: always()
         run: kill $SERVER_PID 2>/dev/null || true
 
-  # ── Property-based tests lourds ───────────────────────────────────────────
+  # Property-based tests lourds
   property-tests-heavy:
     runs-on: ubuntu-latest
 
@@ -53,5 +53,5 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Lancer les property-based tests (10000 itérations)
-        run: python3 tests/propertybased.py --iterations 10000
+      - name: Lancer les property-based tests en mode lourd
+        run: python3 tests/propertybased.py --heavy
